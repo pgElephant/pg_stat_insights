@@ -2,10 +2,10 @@
 -- SELECT statements
 --
 
-CREATE EXTENSION pg_stat_statements;
-SET pg_stat_statements.track_utility = FALSE;
-SET pg_stat_statements.track_planning = TRUE;
-SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+CREATE EXTENSION pg_stat_insights;
+SET pg_stat_insights.track_utility = FALSE;
+SET pg_stat_insights.track_planning = TRUE;
+SELECT pg_stat_insights_reset() IS NOT NULL AS t;
 
 --
 -- simple and compound statements
@@ -76,24 +76,24 @@ PREPARE pgss_test (int) AS SELECT $1, 'test' LIMIT 1;
 EXECUTE pgss_test(1);
 DEALLOCATE pgss_test;
 
-SELECT calls, rows, query FROM pg_stat_statements ORDER BY query COLLATE "C";
-SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+SELECT calls, rows, query FROM pg_stat_insights ORDER BY query COLLATE "C";
+SELECT pg_stat_insights_reset() IS NOT NULL AS t;
 
 -- normalization of constants and parameters, with constant locations
 -- recorded one or more times.
-SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+SELECT pg_stat_insights_reset() IS NOT NULL AS t;
 SELECT WHERE '1' IN ('1'::int, '3'::int::text);
 SELECT WHERE (1, 2) IN ((1, 2), (2, 3));
 SELECT WHERE (3, 4) IN ((5, 6), (8, 7));
-SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT query, calls FROM pg_stat_insights ORDER BY query COLLATE "C";
 
 -- with the last element being an explicit function call with an argument, ensure
 -- the normalization of the squashing interval is correct.
-SELECT pg_stat_statements_reset() IS NOT NULL AS t;
-SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+SELECT pg_stat_insights_reset() IS NOT NULL AS t;
+SELECT pg_stat_insights_reset() IS NOT NULL AS t;
 SELECT WHERE 1 IN (1, int4(1), int4(2));
 SELECT WHERE 1 = ANY (ARRAY[1, int4(1), int4(2)]);
-SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT query, calls FROM pg_stat_insights ORDER BY query COLLATE "C";
 
 --
 -- queries with locking clauses
@@ -101,7 +101,7 @@ SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
 CREATE TABLE pgss_a (id integer PRIMARY KEY);
 CREATE TABLE pgss_b (id integer PRIMARY KEY, a_id integer REFERENCES pgss_a);
 
-SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+SELECT pg_stat_insights_reset() IS NOT NULL AS t;
 
 -- control query
 SELECT * FROM pgss_a JOIN pgss_b ON pgss_b.a_id = pgss_a.id;
@@ -122,15 +122,15 @@ SELECT * FROM pgss_a JOIN pgss_b ON pgss_b.a_id = pgss_a.id FOR KEY SHARE;
 SELECT * FROM pgss_a JOIN pgss_b ON pgss_b.a_id = pgss_a.id FOR UPDATE NOWAIT;
 SELECT * FROM pgss_a JOIN pgss_b ON pgss_b.a_id = pgss_a.id FOR UPDATE SKIP LOCKED;
 
-SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT calls, query FROM pg_stat_insights ORDER BY query COLLATE "C";
 
 DROP TABLE pgss_a, pgss_b CASCADE;
 
 --
--- access to pg_stat_statements_info view
+-- access to pg_stat_insights_info view
 --
-SELECT pg_stat_statements_reset() IS NOT NULL AS t;
-SELECT dealloc FROM pg_stat_statements_info;
+SELECT pg_stat_insights_reset() IS NOT NULL AS t;
+SELECT dealloc FROM pg_stat_insights_info;
 
 -- FROM [ONLY]
 CREATE TABLE tbl_inh(id integer);
@@ -140,7 +140,7 @@ INSERT INTO tbl_inh_1 SELECT 1;
 SELECT * FROM tbl_inh;
 SELECT * FROM ONLY tbl_inh;
 
-SELECT COUNT(*) FROM pg_stat_statements WHERE query LIKE '%FROM%tbl_inh%';
+SELECT COUNT(*) FROM pg_stat_insights WHERE query LIKE '%FROM%tbl_inh%';
 
 -- WITH TIES
 CREATE TABLE limitoption AS SELECT 0 AS val FROM generate_series(1, 10);
@@ -156,7 +156,7 @@ WHERE val < 2
 ORDER BY val
 FETCH FIRST 2 ROW ONLY;
 
-SELECT COUNT(*) FROM pg_stat_statements WHERE query LIKE '%FETCH FIRST%';
+SELECT COUNT(*) FROM pg_stat_insights WHERE query LIKE '%FETCH FIRST%';
 
 -- GROUP BY [DISTINCT]
 SELECT a, b, c
@@ -168,7 +168,7 @@ FROM (VALUES (1, 2, 3), (4, NULL, 6), (7, 8, 9)) AS t (a, b, c)
 GROUP BY DISTINCT ROLLUP(a, b), rollup(a, c)
 ORDER BY a, b, c;
 
-SELECT COUNT(*) FROM pg_stat_statements WHERE query LIKE '%GROUP BY%ROLLUP%';
+SELECT COUNT(*) FROM pg_stat_insights WHERE query LIKE '%GROUP BY%ROLLUP%';
 
 -- GROUPING SET agglevelsup
 SELECT (
@@ -182,8 +182,8 @@ SELECT (
   ) FROM (VALUES (1,2)) v1(a,b) GROUP BY (a,b)
 ) FROM (VALUES(6,7)) v3(e,f) GROUP BY ROLLUP(e,f);
 
-SELECT COUNT(*) FROM pg_stat_statements WHERE query LIKE '%SELECT GROUPING%';
-SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+SELECT COUNT(*) FROM pg_stat_insights WHERE query LIKE '%SELECT GROUPING%';
+SELECT pg_stat_insights_reset() IS NOT NULL AS t;
 
 -- Temporary table with same name, re-created.
 BEGIN;
@@ -194,8 +194,8 @@ BEGIN;
   CREATE TEMP TABLE temp_t (id int) ON COMMIT DROP;
   SELECT * FROM temp_t;
 COMMIT;
-SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
-SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+SELECT calls, query FROM pg_stat_insights ORDER BY query COLLATE "C";
+SELECT pg_stat_insights_reset() IS NOT NULL AS t;
 
 -- search_path with various schemas and temporary tables
 CREATE SCHEMA pgss_schema_1;
@@ -248,8 +248,8 @@ SELECT count(*) FROM pg_temp.tab_search_diff_2;
 SELECT a FROM pgss_schema_2.tab_search_diff_2 AS t1;
 SELECT a FROM pgss_schema_2.tab_search_diff_2;
 SELECT a AS a1 FROM pgss_schema_2.tab_search_diff_2;
-SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT calls, query FROM pg_stat_insights ORDER BY query COLLATE "C";
 DROP SCHEMA pgss_schema_1 CASCADE;
 DROP SCHEMA pgss_schema_2 CASCADE;
 DROP TABLE tab_search_same, tab_search_diff_1, tab_search_diff_2;
-SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+SELECT pg_stat_insights_reset() IS NOT NULL AS t;

@@ -1,43 +1,13 @@
 /*-------------------------------------------------------------------------
  *
- * pg_stat_statements.c
- *		Track statement planning and execution times as well as resource
- *		usage across a whole database cluster.
- *
- * Execution costs are totaled for each distinct source query, and kept in
- * a shared hashtable.  (We track only as many distinct queries as will fit
- * in the designated amount of shared memory.)
- *
- * Starting in Postgres 9.2, this module normalized query entries.  As of
- * Postgres 14, the normalization is done by the core if compute_query_id is
- * enabled, or optionally by third-party modules.
- *
- * To facilitate presenting entries to users, we create "representative" query
- * strings in which constants are replaced with parameter symbols ($n), to
- * make it clearer what a normalized entry can represent.  To save on shared
- * memory, and to avoid having to truncate oversized query strings, we store
- * these strings in a temporary external query-texts file.  Offsets into this
- * file are kept in shared memory.
- *
- * Note about locking issues: to create or delete an entry in the shared
- * hashtable, one must hold pgss->lock exclusively.  Modifying any field
- * in an entry except the counters requires the same.  To look up an entry,
- * one must hold the lock shared.  To read or update the counters within
- * an entry, one must hold the lock shared or exclusive (so the entry doesn't
- * disappear!) and also take the entry's mutex spinlock.
- * The shared state variable pgss->extent (the next free spot in the external
- * query-text file) should be accessed only while holding either the
- * pgss->mutex spinlock, or exclusive lock on pgss->lock.  We use the mutex to
- * allow reserving file space while holding only shared lock on pgss->lock.
- * Rewriting the entire external query-text file, eg for garbage collection,
- * requires holding pgss->lock exclusively; this allows individual entries
- * in the file to be read or written while holding only shared lock.
- *
- *
+ * pg_stat_insights.c
+ *      Enhanced execution statistics of SQL statements
+ * 
+ * Copyright (c) 2024-2025, pgElephant, Inc.
  * Copyright (c) 2008-2025, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  contrib/pg_stat_statements/pg_stat_statements.c
+ *	  contrib/pg_stat_insights/pg_stat_insights.c
  *
  *-------------------------------------------------------------------------
  */
@@ -72,12 +42,12 @@
 #include "utils/timestamp.h"
 
 PG_MODULE_MAGIC_EXT(
-					.name = "pg_stat_statements",
+					.name = "pg_stat_insights",
 					.version = PG_VERSION
 );
 
 /* Location of permanent stats file (valid when database is shut down) */
-#define PGSS_DUMP_FILE	PGSTAT_STAT_PERMANENT_DIRECTORY "/pg_stat_statements.stat"
+#define PGSS_DUMP_FILE	PGSTAT_STAT_PERMANENT_DIRECTORY "/pg_stat_insights.stat"
 
 /*
  * Location of external query text file.
@@ -114,6 +84,7 @@ typedef enum pgssVersion
 	PGSS_V1_10,
 	PGSS_V1_11,
 	PGSS_V1_12,
+	PGSS_V1_14,
 } pgssVersion;
 
 typedef enum pgssStoreKind
@@ -123,7 +94,7 @@ typedef enum pgssStoreKind
 	/*
 	 * PGSS_PLAN and PGSS_EXEC must be respectively 0 and 1 as they're used to
 	 * reference the underlying values in the arrays in the Counters struct,
-	 * and this order is required in pg_stat_statements_internal().
+	 * and this order is required in pg_stat_insights_internal().
 	 */
 	PGSS_PLAN = 0,
 	PGSS_EXEC,
@@ -210,10 +181,13 @@ typedef struct Counters
 											 * to be launched */
 	int64		parallel_workers_launched;	/* # of parallel workers actually
 											 * launched */
+	int32		query_complexity;	/* query complexity score */
+	int32		query_length;		/* length of the query string */
+	int32		param_count;		/* number of parameters in the query */
 } Counters;
 
 /*
- * Global statistics for pg_stat_statements
+ * Global statistics for pg_stat_insights
  */
 typedef struct pgssGlobalStats
 {
@@ -313,18 +287,18 @@ static bool pgss_save = true;	/* whether to save stats across shutdown */
 
 /*---- Function declarations ----*/
 
-PG_FUNCTION_INFO_V1(pg_stat_statements_reset);
-PG_FUNCTION_INFO_V1(pg_stat_statements_reset_1_7);
-PG_FUNCTION_INFO_V1(pg_stat_statements_reset_1_11);
-PG_FUNCTION_INFO_V1(pg_stat_statements_1_2);
-PG_FUNCTION_INFO_V1(pg_stat_statements_1_3);
-PG_FUNCTION_INFO_V1(pg_stat_statements_1_8);
-PG_FUNCTION_INFO_V1(pg_stat_statements_1_9);
-PG_FUNCTION_INFO_V1(pg_stat_statements_1_10);
-PG_FUNCTION_INFO_V1(pg_stat_statements_1_11);
-PG_FUNCTION_INFO_V1(pg_stat_statements_1_12);
-PG_FUNCTION_INFO_V1(pg_stat_statements);
-PG_FUNCTION_INFO_V1(pg_stat_statements_info);
+PG_FUNCTION_INFO_V1(pg_stat_insights_reset);
+PG_FUNCTION_INFO_V1(pg_stat_insights_reset_1_7);
+PG_FUNCTION_INFO_V1(pg_stat_insights_reset_1_11);
+PG_FUNCTION_INFO_V1(pg_stat_insights_1_2);
+PG_FUNCTION_INFO_V1(pg_stat_insights_1_3);
+PG_FUNCTION_INFO_V1(pg_stat_insights_1_8);
+PG_FUNCTION_INFO_V1(pg_stat_insights_1_9);
+PG_FUNCTION_INFO_V1(pg_stat_insights_1_10);
+PG_FUNCTION_INFO_V1(pg_stat_insights_1_11);
+PG_FUNCTION_INFO_V1(pg_stat_insights_1_12);
+PG_FUNCTION_INFO_V1(pg_stat_insights);
+PG_FUNCTION_INFO_V1(pg_stat_insights_info);
 
 static void pgss_shmem_request(void);
 static void pgss_shmem_startup(void);
@@ -356,7 +330,7 @@ static void pgss_store(const char *query, int64 queryId,
 					   JumbleState *jstate,
 					   int parallel_workers_to_launch,
 					   int parallel_workers_launched);
-static void pg_stat_statements_internal(FunctionCallInfo fcinfo,
+static void pg_stat_insights_internal(FunctionCallInfo fcinfo,
 										pgssVersion api_version,
 										bool showtext);
 static Size pgss_memsize(void);
@@ -388,7 +362,7 @@ _PG_init(void)
 	 * In order to create our shared memory area, we have to be loaded via
 	 * shared_preload_libraries.  If not, fall out without hooking into any of
 	 * the main system.  (We don't throw error here because it seems useful to
-	 * allow the pg_stat_statements functions to be created even when the
+	 * allow the pg_stat_insights functions to be created even when the
 	 * module isn't active.  The functions must protect themselves against
 	 * being called then, however.)
 	 */
@@ -404,8 +378,8 @@ _PG_init(void)
 	/*
 	 * Define (or redefine) custom GUC variables.
 	 */
-	DefineCustomIntVariable("pg_stat_statements.max",
-							"Sets the maximum number of statements tracked by pg_stat_statements.",
+	DefineCustomIntVariable("pg_stat_insights.max",
+							"Sets the maximum number of statements tracked by pg_stat_insights.",
 							NULL,
 							&pgss_max,
 							5000,
@@ -417,8 +391,8 @@ _PG_init(void)
 							NULL,
 							NULL);
 
-	DefineCustomEnumVariable("pg_stat_statements.track",
-							 "Selects which statements are tracked by pg_stat_statements.",
+	DefineCustomEnumVariable("pg_stat_insights.track",
+							 "Selects which statements are tracked by pg_stat_insights.",
 							 NULL,
 							 &pgss_track,
 							 PGSS_TRACK_TOP,
@@ -429,8 +403,8 @@ _PG_init(void)
 							 NULL,
 							 NULL);
 
-	DefineCustomBoolVariable("pg_stat_statements.track_utility",
-							 "Selects whether utility commands are tracked by pg_stat_statements.",
+	DefineCustomBoolVariable("pg_stat_insights.track_utility",
+							 "Selects whether utility commands are tracked by pg_stat_insights.",
 							 NULL,
 							 &pgss_track_utility,
 							 true,
@@ -440,8 +414,8 @@ _PG_init(void)
 							 NULL,
 							 NULL);
 
-	DefineCustomBoolVariable("pg_stat_statements.track_planning",
-							 "Selects whether planning duration is tracked by pg_stat_statements.",
+	DefineCustomBoolVariable("pg_stat_insights.track_planning",
+							 "Selects whether planning duration is tracked by pg_stat_insights.",
 							 NULL,
 							 &pgss_track_planning,
 							 false,
@@ -451,8 +425,8 @@ _PG_init(void)
 							 NULL,
 							 NULL);
 
-	DefineCustomBoolVariable("pg_stat_statements.save",
-							 "Save pg_stat_statements statistics across server shutdowns.",
+	DefineCustomBoolVariable("pg_stat_insights.save",
+							 "Save pg_stat_insights statistics across server shutdowns.",
 							 NULL,
 							 &pgss_save,
 							 true,
@@ -462,7 +436,7 @@ _PG_init(void)
 							 NULL,
 							 NULL);
 
-	MarkGUCPrefixReserved("pg_stat_statements");
+	MarkGUCPrefixReserved("pg_stat_insights");
 
 	/*
 	 * Install hooks.
@@ -498,7 +472,7 @@ pgss_shmem_request(void)
 		prev_shmem_request_hook();
 
 	RequestAddinShmemSpace(pgss_memsize());
-	RequestNamedLWLockTranche("pg_stat_statements", 1);
+	RequestNamedLWLockTranche("pg_stat_insights", 1);
 }
 
 /*
@@ -533,14 +507,14 @@ pgss_shmem_startup(void)
 	 */
 	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
 
-	pgss = ShmemInitStruct("pg_stat_statements",
+	pgss = ShmemInitStruct("pg_stat_insights",
 						   sizeof(pgssSharedState),
 						   &found);
 
 	if (!found)
 	{
 		/* First time through ... */
-		pgss->lock = &(GetNamedLWLockTranche("pg_stat_statements"))->lock;
+		pgss->lock = &(GetNamedLWLockTranche("pg_stat_insights"))->lock;
 		pgss->cur_median_usage = ASSUMED_MEDIAN_INIT;
 		pgss->mean_query_len = ASSUMED_LENGTH_INIT;
 		SpinLockInit(&pgss->mutex);
@@ -553,7 +527,7 @@ pgss_shmem_startup(void)
 
 	info.keysize = sizeof(pgssHashKey);
 	info.entrysize = sizeof(pgssEntry);
-	pgss_hash = ShmemInitHash("pg_stat_statements hash",
+	pgss_hash = ShmemInitHash("pg_stat_insights hash",
 							  pgss_max, pgss_max,
 							  &info,
 							  HASH_ELEM | HASH_BLOBS);
@@ -669,7 +643,7 @@ pgss_shmem_startup(void)
 		entry->minmax_stats_since = temp.minmax_stats_since;
 	}
 
-	/* Read global statistics for pg_stat_statements */
+	/* Read global statistics for pg_stat_insights */
 	if (fread(&pgss->stats, sizeof(pgssGlobalStats), 1, file) != 1)
 		goto read_error;
 
@@ -723,7 +697,7 @@ fail:
 
 	/*
 	 * Don't unlink PGSS_TEXT_FILE here; it should always be around while the
-	 * server is running with pg_stat_statements enabled
+	 * server is running with pg_stat_insights enabled
 	 */
 }
 
@@ -794,7 +768,7 @@ pgss_shmem_shutdown(int code, Datum arg)
 		}
 	}
 
-	/* Dump global statistics for pg_stat_statements */
+	/* Dump global statistics for pg_stat_insights */
 	if (fwrite(&pgss->stats, sizeof(pgssGlobalStats), 1, file) != 1)
 		goto error;
 
@@ -1002,21 +976,21 @@ pgss_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	 * counting of optimizable statements that are directly contained in
 	 * utility statements.
 	 */
-	if (pgss_enabled(nesting_level) && queryDesc->plannedstmt->queryId != INT64CONST(0))
-	{
-		/*
-		 * Set up to track total elapsed time in ExecutorRun.  Make sure the
-		 * space is allocated in the per-query context so it will go away at
-		 * ExecutorEnd.
-		 */
-		if (queryDesc->totaltime == NULL)
-		{
-			MemoryContext oldcxt;
+	if (queryDesc->plannedstmt->queryId == 0)
+		return;
 
-			oldcxt = MemoryContextSwitchTo(queryDesc->estate->es_query_cxt);
-			queryDesc->totaltime = InstrAlloc(1, INSTRUMENT_ALL, false);
-			MemoryContextSwitchTo(oldcxt);
-		}
+	/*
+	 * Set up to track total elapsed time in ExecutorRun.  Make sure the
+	 * space is allocated in the per-query context so it will go away at
+	 * ExecutorEnd.
+	 */
+	if (queryDesc->totaltime == NULL)
+	{
+		MemoryContext oldcxt;
+
+		oldcxt = MemoryContextSwitchTo(queryDesc->estate->es_query_cxt);
+		queryDesc->totaltime = InstrAlloc(1, INSTRUMENT_ALL, false);
+		MemoryContextSwitchTo(oldcxt);
 	}
 }
 
@@ -1125,7 +1099,7 @@ pgss_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 	 * since we are already measuring the statement's costs at the utility
 	 * level.
 	 *
-	 * Note that this is only done if pg_stat_statements is enabled and
+	 * Note that this is only done if pg_stat_insights is enabled and
 	 * configured to track utility statements, in the unlikely possibility
 	 * that user configured another extension to handle utility statements
 	 * only.
@@ -1510,7 +1484,7 @@ done:
  * Reset statement statistics corresponding to userid, dbid, and queryid.
  */
 Datum
-pg_stat_statements_reset_1_7(PG_FUNCTION_ARGS)
+pg_stat_insights_reset_1_7(PG_FUNCTION_ARGS)
 {
 	Oid			userid;
 	Oid			dbid;
@@ -1526,7 +1500,7 @@ pg_stat_statements_reset_1_7(PG_FUNCTION_ARGS)
 }
 
 Datum
-pg_stat_statements_reset_1_11(PG_FUNCTION_ARGS)
+pg_stat_insights_reset_1_11(PG_FUNCTION_ARGS)
 {
 	Oid			userid;
 	Oid			dbid;
@@ -1545,7 +1519,7 @@ pg_stat_statements_reset_1_11(PG_FUNCTION_ARGS)
  * Reset statement statistics.
  */
 Datum
-pg_stat_statements_reset(PG_FUNCTION_ARGS)
+pg_stat_insights_reset(PG_FUNCTION_ARGS)
 {
 	entry_reset(0, 0, 0, false);
 
@@ -1562,7 +1536,8 @@ pg_stat_statements_reset(PG_FUNCTION_ARGS)
 #define PG_STAT_STATEMENTS_COLS_V1_10	43
 #define PG_STAT_STATEMENTS_COLS_V1_11	49
 #define PG_STAT_STATEMENTS_COLS_V1_12	52
-#define PG_STAT_STATEMENTS_COLS			52	/* maximum of above */
+#define PG_STAT_STATEMENTS_COLS_V1_14	55
+#define PG_STAT_STATEMENTS_COLS			55	/* maximum of above */
 
 /*
  * Retrieve statement statistics.
@@ -1575,91 +1550,91 @@ pg_stat_statements_reset(PG_FUNCTION_ARGS)
  * function.  Unfortunately we weren't bright enough to do that for 1.1.
  */
 Datum
-pg_stat_statements_1_12(PG_FUNCTION_ARGS)
+pg_stat_insights_1_12(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_12, showtext);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_12, showtext);
 
 	return (Datum) 0;
 }
 
 Datum
-pg_stat_statements_1_11(PG_FUNCTION_ARGS)
+pg_stat_insights_1_11(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_11, showtext);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_11, showtext);
 
 	return (Datum) 0;
 }
 
 Datum
-pg_stat_statements_1_10(PG_FUNCTION_ARGS)
+pg_stat_insights_1_10(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_10, showtext);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_10, showtext);
 
 	return (Datum) 0;
 }
 
 Datum
-pg_stat_statements_1_9(PG_FUNCTION_ARGS)
+pg_stat_insights_1_9(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_9, showtext);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_9, showtext);
 
 	return (Datum) 0;
 }
 
 Datum
-pg_stat_statements_1_8(PG_FUNCTION_ARGS)
+pg_stat_insights_1_8(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_8, showtext);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_8, showtext);
 
 	return (Datum) 0;
 }
 
 Datum
-pg_stat_statements_1_3(PG_FUNCTION_ARGS)
+pg_stat_insights_1_3(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_3, showtext);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_3, showtext);
 
 	return (Datum) 0;
 }
 
 Datum
-pg_stat_statements_1_2(PG_FUNCTION_ARGS)
+pg_stat_insights_1_2(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_2, showtext);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_2, showtext);
 
 	return (Datum) 0;
 }
 
 /*
- * Legacy entry point for pg_stat_statements() API versions 1.0 and 1.1.
+ * Legacy entry point for pg_stat_insights() API versions 1.0 and 1.1.
  * This can be removed someday, perhaps.
  */
 Datum
-pg_stat_statements(PG_FUNCTION_ARGS)
+pg_stat_insights(PG_FUNCTION_ARGS)
 {
 	/* If it's really API 1.1, we'll figure that out below */
-	pg_stat_statements_internal(fcinfo, PGSS_V1_0, true);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_14, true);
 
 	return (Datum) 0;
 }
 
-/* Common code for all versions of pg_stat_statements() */
+/* Common code for all versions of pg_stat_insights() */
 static void
-pg_stat_statements_internal(FunctionCallInfo fcinfo,
+pg_stat_insights_internal(FunctionCallInfo fcinfo,
 							pgssVersion api_version,
 							bool showtext)
 {
@@ -1683,7 +1658,7 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 	if (!pgss || !pgss_hash)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("pg_stat_statements must be loaded via \"shared_preload_libraries\"")));
+				 errmsg("pg_stat_insights must be loaded via \"shared_preload_libraries\"")));
 
 	InitMaterializedSRF(fcinfo, 0);
 
@@ -1699,7 +1674,7 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 				elog(ERROR, "incorrect number of output arguments");
 			break;
 		case PG_STAT_STATEMENTS_COLS_V1_1:
-			/* pg_stat_statements() should have told us 1.0 */
+			/* pg_stat_insights() should have told us 1.0 */
 			if (api_version != PGSS_V1_0)
 				elog(ERROR, "incorrect number of output arguments");
 			api_version = PGSS_V1_1;
@@ -1730,6 +1705,10 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 			break;
 		case PG_STAT_STATEMENTS_COLS_V1_12:
 			if (api_version != PGSS_V1_12)
+				elog(ERROR, "incorrect number of output arguments");
+			break;
+		case PG_STAT_STATEMENTS_COLS_V1_14:
+			if (api_version != PGSS_V1_14)
 				elog(ERROR, "incorrect number of output arguments");
 			break;
 		default:
@@ -1989,6 +1968,12 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 			values[i++] = TimestampTzGetDatum(stats_since);
 			values[i++] = TimestampTzGetDatum(minmax_stats_since);
 		}
+		if (api_version >= PGSS_V1_14)
+		{
+			values[i++] = Int32GetDatum(tmp.query_complexity);
+			values[i++] = Int32GetDatum(tmp.query_length);
+			values[i++] = Int32GetDatum(tmp.param_count);
+		}
 
 		Assert(i == (api_version == PGSS_V1_0 ? PG_STAT_STATEMENTS_COLS_V1_0 :
 					 api_version == PGSS_V1_1 ? PG_STAT_STATEMENTS_COLS_V1_1 :
@@ -1999,6 +1984,7 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 					 api_version == PGSS_V1_10 ? PG_STAT_STATEMENTS_COLS_V1_10 :
 					 api_version == PGSS_V1_11 ? PG_STAT_STATEMENTS_COLS_V1_11 :
 					 api_version == PGSS_V1_12 ? PG_STAT_STATEMENTS_COLS_V1_12 :
+					 api_version == PGSS_V1_14 ? PG_STAT_STATEMENTS_COLS_V1_14 :
 					 -1 /* fail if you forget to update this assert */ ));
 
 		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
@@ -2009,14 +1995,14 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 	free(qbuffer);
 }
 
-/* Number of output arguments (columns) for pg_stat_statements_info */
+/* Number of output arguments (columns) for pg_stat_insights_info */
 #define PG_STAT_STATEMENTS_INFO_COLS	2
 
 /*
- * Return statistics of pg_stat_statements.
+ * Return statistics of pg_stat_insights.
  */
 Datum
-pg_stat_statements_info(PG_FUNCTION_ARGS)
+pg_stat_insights_info(PG_FUNCTION_ARGS)
 {
 	pgssGlobalStats stats;
 	TupleDesc	tupdesc;
@@ -2026,13 +2012,13 @@ pg_stat_statements_info(PG_FUNCTION_ARGS)
 	if (!pgss || !pgss_hash)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("pg_stat_statements must be loaded via \"shared_preload_libraries\"")));
+				 errmsg("pg_stat_insights must be loaded via \"shared_preload_libraries\"")));
 
 	/* Build a tuple descriptor for our result type */
 	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
 		elog(ERROR, "return type must be a row type");
 
-	/* Read global statistics for pg_stat_statements */
+	/* Read global statistics for pg_stat_insights */
 	SpinLockAcquire(&pgss->mutex);
 	stats = pgss->stats;
 	SpinLockRelease(&pgss->mutex);
@@ -2684,7 +2670,7 @@ entry_reset(Oid userid, Oid dbid, int64 queryid, bool minmax_only)
 	if (!pgss || !pgss_hash)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("pg_stat_statements must be loaded via \"shared_preload_libraries\"")));
+				 errmsg("pg_stat_insights must be loaded via \"shared_preload_libraries\"")));
 
 	LWLockAcquire(pgss->lock, LW_EXCLUSIVE);
 	num_entries = hash_get_num_entries(pgss_hash);
@@ -2743,7 +2729,7 @@ entry_reset(Oid userid, Oid dbid, int64 queryid, bool minmax_only)
 		goto release_lock;
 
 	/*
-	 * Reset global statistics for pg_stat_statements since all entries are
+	 * Reset global statistics for pg_stat_insights since all entries are
 	 * removed.
 	 */
 	SpinLockAcquire(&pgss->mutex);

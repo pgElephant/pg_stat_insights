@@ -2,7 +2,7 @@
 -- Validate WAL generation metrics
 --
 
-SET pg_stat_statements.track_utility = FALSE;
+SET pg_stat_insights.track_utility = FALSE;
 
 CREATE TABLE pgss_wal_tab (a int, b char(20));
 
@@ -16,5 +16,5 @@ SELECT query, calls, rows,
 wal_bytes > 0 as wal_bytes_generated,
 wal_records > 0 as wal_records_generated,
 wal_records >= rows as wal_records_ge_rows
-FROM pg_stat_statements ORDER BY query COLLATE "C";
-SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+FROM pg_stat_insights ORDER BY query COLLATE "C";
+SELECT pg_stat_insights_reset() IS NOT NULL AS t;

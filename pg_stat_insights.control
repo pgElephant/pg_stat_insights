@@ -1,0 +1,18 @@
+#-------------------------------------------------------------------------
+#
+# pg_stat_insights.control
+#      Extension control file for pg_stat_insights
+# Copyright (c) 2024-2025, pgElephant, Inc.
+
+# Copyright (c) 2008-2025, PostgreSQL Global Development Group
+#
+# IDENTIFICATION
+#	  contrib/pg_stat_insights/pg_stat_insights.control
+#
+#-------------------------------------------------------------------------
+
+# pg_stat_insights extension
+comment = 'track planning and execution statistics of all SQL statements executed with enhanced insights'
+default_version = '1.0'
+module_pathname = '$libdir/pg_stat_insights'
+relocatable = true

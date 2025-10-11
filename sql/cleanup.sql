@@ -1,1 +1,1 @@
-DROP EXTENSION pg_stat_statements;
+DROP EXTENSION pg_stat_insights;
