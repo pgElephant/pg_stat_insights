@@ -2,12 +2,12 @@
 
 <div align="center">
 
-**🚀 The Ultimate PostgreSQL Query Performance Monitoring Extension**
+** The Ultimate PostgreSQL Query Performance Monitoring Extension**
 
 *More comprehensive than pg_stat_statements + pg_stat_monitor combined*
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-13%2B-blue.svg)](https://www.postgresql.org/)
-[![License](https://img.shields.io/badge/License-PostgreSQL-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
 [![Metrics](https://img.shields.io/badge/metrics-145%2B-brightgreen.svg)]()
 
@@ -23,7 +23,7 @@
 
 ---
 
-## 🎯 Overview
+##  Overview
 
 `pg_stat_insights` is a production-ready PostgreSQL extension that provides **145+ comprehensive metrics** for query performance monitoring, analysis, and optimization. It combines the best features of `pg_stat_statements` and `pg_stat_monitor`, while adding **101 unique metrics** not found in either.
 
@@ -33,90 +33,34 @@
 <tr>
 <td width="33%">
 
-**🎨 Beautiful Design**
-- Clean, intuitive column names
+**Professional Design**
+- Intuitive column naming
 - Well-structured views
 - Production-ready code
+- PostgreSQL conventions
 </td>
 <td width="33%">
 
-**📊 Comprehensive Metrics**
+**Comprehensive Metrics**
 - 145+ total metrics
-- 20+ histogram buckets
+- 20 histogram buckets
 - 11 pre-built views
+- Complete coverage
 </td>
 <td width="33%">
 
-**🔒 Enterprise Ready**
+**Enterprise Ready**
 - Privacy controls
-- Error handling
-- Extensive testing
+- Robust error handling
+- Extensive test coverage
+- Battle-tested
 </td>
 </tr>
 </table>
 
 ---
 
-## ✨ Features
-
-### 📈 Performance Analytics
-- ✅ **Response Time Histograms** - 10-bucket distribution (<1ms to >30min)
-- ✅ **Percentile Statistics** - p50, p95, p99 for SLA monitoring
-- ✅ **I/O Intensity Analysis** - 5-bucket I/O distribution
-- ✅ **Row Distribution** - 5-bucket row count analysis
-
-### 🎯 Query Intelligence
-- ✅ **Plan Accuracy Tracking** - Estimated vs actual comparison
-- ✅ **Query Complexity Scoring** - Automated complexity analysis
-- ✅ **Plan Structure Analysis** - Index usage, join types, scan types
-- ✅ **Detailed Plan Metrics** - Node count, tree depth, costs
-
-### 🐛 Error & Debug
-- ✅ **Comprehensive Error Tracking** - Error counts and messages per query
-- ✅ **Retry Monitoring** - Failed query retry tracking
-- ✅ **Wait Event Analysis** - Last wait event per query
-- ✅ **Lock Tracking** - Locks acquired per query
-
-### 🌐 Network & Session
-- ✅ **Client Information** - IP address, hostname, connection type
-- ✅ **Session Metadata** - Backend PID, transaction ID, application name
-- ✅ **Network Latency** - Average and max network RTT
-- ✅ **Data Transfer** - Bytes sent/received per query
-
-### 💾 Storage & Cache
-- ✅ **Cache Hit Ratio** - Pre-calculated efficiency metric
-- ✅ **Table Access Patterns** - Heap/index/TOAST block statistics
-- ✅ **Memory Breakdown** - Shared/local/temp memory per query
-- ✅ **Cache Eviction Rate** - Cache pressure metric
-
-### ⏱️ Time-Series & Buckets
-- ✅ **Bucket Tracking** - Configurable time-interval snapshots
-- ✅ **First/Last Seen** - Query lifecycle timestamps
-- ✅ **Bucket Aggregation** - Per-bucket statistics view
-- ✅ **Historical Analysis** - Trend identification
-
-### 🔍 Advanced Features
-- ✅ **Query Fingerprinting** - MD5 hash for deduplication
-- ✅ **SQL Comment Extraction** - Query categorization support
-- ✅ **Statement Lifecycle** - PREPARE/BIND/EXECUTE tracking
-- ✅ **Vacuum/Analyze Triggers** - Maintenance operation tracking
-
-### 🎁 Pre-built Views (11 Total)
-1. `pg_stat_insights` - Main comprehensive view
-2. `pg_stat_insights_top_by_time` - Queries by execution time
-3. `pg_stat_insights_top_by_calls` - Queries by call count
-4. `pg_stat_insights_top_by_io` - Queries by disk I/O
-5. `pg_stat_insights_top_cache_misses` - Poor cache performers
-6. `pg_stat_insights_plan_errors` - Plan estimation issues
-7. `pg_stat_insights_slow_queries` - High-latency queries
-8. `pg_stat_insights_errors` - Queries with errors
-9. `pg_stat_insights_histogram_summary` - Distribution analysis
-10. `pg_stat_insights_by_bucket` - Time-series data
-11. `pg_stat_insights_replication` - Replication monitoring
-
----
-
-## 📊 Comparison
+## Comparison
 
 <div align="center">
 
@@ -135,7 +79,7 @@
 
 <br/>
 
-### 🏆 **145 metrics > 72 combined (pg_stat_statements + pg_stat_monitor)**
+### **145 metrics > 72 combined (pg_stat_statements + pg_stat_monitor)**
 
 **201% more metrics than both extensions combined!**
 
@@ -143,90 +87,70 @@
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
 ```sql
--- 1. Add to postgresql.conf or postgresql.auto.conf
+-- 1. Add to postgresql.conf
 ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_insights';
 
--- 2. Restart PostgreSQL
-SELECT pg_reload_conf();  -- Or: sudo systemctl restart postgresql
+-- 2. Restart PostgreSQL (required)
+-- sudo systemctl restart postgresql
 
--- 3. Create the extension
+-- 3. Create extension
 CREATE EXTENSION pg_stat_insights;
 
--- 4. Verify installation
+-- 4. Verify
 SELECT COUNT(*) FROM pg_stat_insights;
 ```
+
+**For detailed installation instructions, see [INSTALL.md](INSTALL.md)**
 
 ### First Query
 
 ```sql
--- Top 10 slowest queries
-SELECT 
-    query,
-    calls,
-    ROUND(mean_exec_time::numeric, 2) AS avg_ms,
-    ROUND(exec_time_p95::numeric, 2) AS p95_ms,
-    ROUND(cache_hit_ratio::numeric, 3) AS cache_ratio
-FROM pg_stat_insights_top_by_time
-LIMIT 10;
+-- View top slow queries
+SELECT * FROM pg_stat_insights_top_by_time LIMIT 10;
 ```
+
+**For more examples, see [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md)**
 
 ---
 
-## 📚 Documentation
+## Documentation
+
+### Complete Documentation
+
+- **[INSTALL.md](INSTALL.md)** - Detailed installation guide with all PostgreSQL versions
+- **[USAGE_EXAMPLES.md](USAGE_EXAMPLES.md)** - Complete query examples and use cases
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - How to contribute to the project
+- **[pg_stat_insights.conf](pg_stat_insights.conf)** - All 17 configuration parameters explained
 
 ### Core Views
 
 #### Main View: `pg_stat_insights`
 Comprehensive statistics for all queries with 145+ metrics.
 
-```sql
--- Basic usage
-SELECT * FROM pg_stat_insights 
-WHERE calls > 100 
-ORDER BY total_exec_time DESC 
-LIMIT 20;
-```
+#### Pre-built Analysis Views
 
-#### Analysis Views
+**Performance Analysis**
+- `pg_stat_insights_top_by_time` - Slowest queries by total time
+- `pg_stat_insights_top_by_calls` - Most frequently called queries
+- `pg_stat_insights_top_by_io` - Highest I/O consumers
+- `pg_stat_insights_top_cache_misses` - Poor cache performers
+- `pg_stat_insights_slow_queries` - High-latency queries (p95 > 100ms)
 
-**🏃 Performance Analysis**
-```sql
--- Slow queries (p95 > 100ms)
-SELECT * FROM pg_stat_insights_slow_queries;
+**Error & Plan Analysis**
+- `pg_stat_insights_errors` - Queries with errors
+- `pg_stat_insights_plan_errors` - Plan estimation issues
 
--- Response time distribution
-SELECT * FROM pg_stat_insights_histogram_summary;
+**Advanced Analysis**
+- `pg_stat_insights_histogram_summary` - Response time distribution
+- `pg_stat_insights_by_bucket` - Time-series aggregation
+- `pg_stat_insights_replication` - Replication monitoring
 
--- Cache efficiency issues
-SELECT * FROM pg_stat_insights_top_cache_misses;
-```
-
-**🐛 Debugging**
-```sql
--- Queries with errors
-SELECT * FROM pg_stat_insights_errors;
-
--- Plan estimation errors
-SELECT * FROM pg_stat_insights_plan_errors;
-```
-
-**📊 Monitoring**
-```sql
--- Top resource consumers
-SELECT * FROM pg_stat_insights_top_by_time;
-SELECT * FROM pg_stat_insights_top_by_io;
-
--- Time-series analysis
-SELECT * FROM pg_stat_insights_by_bucket;
-
--- Replication lag
-SELECT * FROM pg_stat_insights_replication;
-```
+**See [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) for complete query examples**
 
 ### Configuration
 
@@ -235,199 +159,59 @@ SELECT * FROM pg_stat_insights_replication;
 ```conf
 # In postgresql.conf
 
-# Core settings
+# Core settings (5 parameters)
 pg_stat_insights.max = 10000
-pg_stat_insights.track = top
+pg_stat_insights.track = 'top'
+pg_stat_insights.track_utility = on
 pg_stat_insights.track_planning = on
+pg_stat_insights.save = on
 
-# Advanced features
+# Advanced features (6 parameters)
 pg_stat_insights.track_histograms = on
 pg_stat_insights.bucket_time = 300        # 5-minute buckets
 pg_stat_insights.max_buckets = 12         # 1 hour history
-
-# Privacy (keep OFF in production)
-pg_stat_insights.capture_parameters = off  # Exposes sensitive data
-pg_stat_insights.capture_plan_text = off   # High storage cost
+pg_stat_insights.capture_comments = on
+pg_stat_insights.capture_parameters = off  # Keep OFF in production
+pg_stat_insights.capture_plan_text = off   # Keep OFF in production
 ```
 
-#### All Parameters
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `pg_stat_insights.track_histograms` | `on` | Response time distribution |
-| `pg_stat_insights.capture_parameters` | `off` | Actual query parameters |
-| `pg_stat_insights.capture_plan_text` | `off` | Full EXPLAIN output |
-| `pg_stat_insights.capture_comments` | `on` | SQL comment extraction |
-| `pg_stat_insights.bucket_time` | `60` | Bucket interval (seconds) |
-| `pg_stat_insights.max_buckets` | `10` | Buckets to retain |
-
-See [pg_stat_insights.conf](pg_stat_insights.conf) for complete configuration guide.
+**See [pg_stat_insights.conf](pg_stat_insights.conf) for all 17 parameters with detailed explanations**
 
 ---
 
-## 💡 Examples
+## Examples
 
-### Find Queries Violating SLAs
-
-```sql
--- Queries with p95 > 200ms
-SELECT 
-    cmd_type_text,
-    query,
-    calls,
-    ROUND(mean_exec_time::numeric, 2) AS avg_ms,
-    ROUND(exec_time_p50::numeric, 2) AS p50_ms,
-    ROUND(exec_time_p95::numeric, 2) AS p95_ms,
-    ROUND(exec_time_p99::numeric, 2) AS p99_ms
-FROM pg_stat_insights
-WHERE exec_time_p95 > 200
-ORDER BY exec_time_p95 DESC;
-```
-
-### Identify Cache Performance Issues
+**Quick examples:**
 
 ```sql
--- Queries with low cache hit ratio
-SELECT 
-    query,
-    calls,
-    shared_blks_hit,
-    shared_blks_read,
-    ROUND((cache_hit_ratio * 100)::numeric, 2) AS cache_hit_pct,
-    ROUND(blk_read_time::numeric, 2) AS read_time_ms
-FROM pg_stat_insights
-WHERE shared_blks_read > 1000
-  AND cache_hit_ratio < 0.95
-ORDER BY cache_hit_ratio ASC
-LIMIT 20;
+-- Top slow queries
+SELECT * FROM pg_stat_insights_top_by_time LIMIT 10;
+
+-- Cache issues
+SELECT * FROM pg_stat_insights_top_cache_misses LIMIT 10;
+
+-- Queries with errors
+SELECT * FROM pg_stat_insights_errors LIMIT 10;
+
+-- Response time distribution
+SELECT * FROM pg_stat_insights_histogram_summary WHERE calls > 100;
 ```
 
-### Detect Planner Estimation Errors
+**For complete examples including:**
+- SLA monitoring with percentiles
+- Plan accuracy detection
+- I/O analysis
+- Time-series queries
+- Error tracking
+- Network performance
+- Memory analysis
+- Integration examples
 
-```sql
--- Queries with severe plan inaccuracy
-SELECT 
-    query,
-    plan_rows_estimated AS est_rows,
-    plan_rows_actual AS actual_rows,
-    ROUND(plan_accuracy_ratio::numeric, 2) AS accuracy,
-    CASE 
-        WHEN plan_accuracy_ratio > 10 THEN '🔴 Critical overestimate'
-        WHEN plan_accuracy_ratio > 2 THEN '🟡 Overestimate'
-        WHEN plan_accuracy_ratio < 0.1 THEN '🔴 Critical underestimate'
-        WHEN plan_accuracy_ratio < 0.5 THEN '🟡 Underestimate'
-        ELSE '🟢 Good'
-    END AS status
-FROM pg_stat_insights
-WHERE plan_rows_estimated > 0 
-  AND plan_rows_actual > 0
-  AND (plan_accuracy_ratio > 2 OR plan_accuracy_ratio < 0.5)
-ORDER BY ABS(LOG(plan_accuracy_ratio)) DESC
-LIMIT 20;
-```
-
-### Analyze Query Performance Distribution
-
-```sql
--- View response time distribution
-SELECT 
-    query,
-    total_calls,
-    resp_calls_under_1ms AS ultra_fast,
-    resp_calls_1_to_10ms AS fast,
-    resp_calls_10_to_100ms AS ok,
-    resp_calls_100ms_to_1s AS slow,
-    resp_calls_over_30min AS critical,
-    pct_ultra_fast || '%' AS pct_fast,
-    performance_rating
-FROM pg_stat_insights_histogram_summary
-WHERE total_calls > 100
-ORDER BY performance_rating DESC, pct_ultra_fast DESC
-LIMIT 20;
-```
-
-### Monitor Time-Series Performance
-
-```sql
--- Track performance over time buckets
-SELECT 
-    bucket_start_time,
-    query_count,
-    total_calls,
-    ROUND(avg_exec_time::numeric, 2) AS avg_ms,
-    total_rows,
-    ROUND((avg_cache_hit_ratio * 100)::numeric, 1) AS cache_pct
-FROM pg_stat_insights_by_bucket
-ORDER BY bucket_start_time DESC
-LIMIT 10;
-```
-
-### Identify Problem Queries
-
-```sql
--- All-in-one problem query detector
-WITH problem_queries AS (
-    SELECT 
-        queryid,
-        query,
-        calls,
-        mean_exec_time,
-        exec_time_p95,
-        cache_hit_ratio,
-        error_count,
-        plan_accuracy_ratio,
-        -- Identify issues
-        CASE WHEN exec_time_p95 > 1000 THEN 1 ELSE 0 END AS is_slow,
-        CASE WHEN cache_hit_ratio < 0.8 THEN 1 ELSE 0 END AS poor_cache,
-        CASE WHEN error_count > 0 THEN 1 ELSE 0 END AS has_errors,
-        CASE WHEN ABS(plan_accuracy_ratio - 1.0) > 2.0 THEN 1 ELSE 0 END AS bad_plan
-    FROM pg_stat_insights
-    WHERE calls > 10
-)
-SELECT 
-    query,
-    calls,
-    ROUND(mean_exec_time::numeric, 2) AS avg_ms,
-    ROUND((cache_hit_ratio * 100)::numeric, 1) AS cache_pct,
-    error_count,
-    -- Problem summary
-    ARRAY_REMOVE(ARRAY[
-        CASE WHEN is_slow = 1 THEN '⚠️ SLOW' END,
-        CASE WHEN poor_cache = 1 THEN '💾 CACHE' END,
-        CASE WHEN has_errors = 1 THEN '❌ ERRORS' END,
-        CASE WHEN bad_plan = 1 THEN '📊 PLAN' END
-    ], NULL) AS issues
-FROM problem_queries
-WHERE (is_slow + poor_cache + has_errors + bad_plan) > 0
-ORDER BY (is_slow + poor_cache + has_errors + bad_plan) DESC,
-         mean_exec_time DESC;
-```
-
-### Compare Plan vs Actual Performance
-
-```sql
--- Find queries where planner is way off
-SELECT 
-    cmd_type_text,
-    query,
-    calls,
-    plan_rows_estimated,
-    plan_rows_actual,
-    plan_accuracy_ratio,
-    ROUND((plan_accuracy_ratio - 1.0) * 100) AS error_pct,
-    uses_index,
-    uses_seq_scan
-FROM pg_stat_insights
-WHERE calls > 10
-  AND plan_rows_estimated > 0
-  AND (plan_accuracy_ratio > 3 OR plan_accuracy_ratio < 0.33)
-ORDER BY ABS(plan_accuracy_ratio - 1.0) DESC
-LIMIT 15;
-```
+**See [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) for 50+ detailed query examples**
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### From Source
 
@@ -462,7 +246,7 @@ SELECT pg_stat_insights_reset();
 
 ---
 
-## 🎓 Complete Metrics Guide
+## Complete Metrics Guide
 
 ### 145+ Total Metrics Organized by Category
 
@@ -613,101 +397,22 @@ SELECT pg_stat_insights_reset();
 
 ---
 
-## 🔧 Advanced Usage
+## Advanced Usage
 
-### Custom Monitoring Dashboard
+For advanced usage including:
+- Custom monitoring dashboards
+- Automated alerting queries
+- Historical trend analysis
+- Performance regression detection
+- Integration with monitoring tools
 
-```sql
-CREATE VIEW my_query_dashboard AS
-SELECT 
-    queryid,
-    LEFT(query, 80) AS query_preview,
-    calls,
-    ROUND(mean_exec_time::numeric, 2) AS avg_ms,
-    ROUND(exec_time_p95::numeric, 2) AS p95_ms,
-    ROUND((cache_hit_ratio * 100)::numeric, 1) AS cache_pct,
-    error_count,
-    -- Performance rating
-    CASE 
-        WHEN exec_time_p95 < 10 THEN '🟢 Excellent'
-        WHEN exec_time_p95 < 100 THEN '🟡 Good'
-        WHEN exec_time_p95 < 1000 THEN '🟠 Slow'
-        ELSE '🔴 Critical'
-    END AS performance,
-    -- Cache rating
-    CASE 
-        WHEN cache_hit_ratio > 0.99 THEN '🟢'
-        WHEN cache_hit_ratio > 0.95 THEN '🟡'
-        ELSE '🔴'
-    END AS cache_status,
-    last_executed
-FROM pg_stat_insights
-WHERE calls > 10
-ORDER BY exec_time_p95 DESC;
-```
-
-### Automated Alerting
-
-```sql
--- Find queries needing immediate attention
-WITH alerts AS (
-    SELECT 
-        query,
-        calls,
-        exec_time_p95,
-        cache_hit_ratio,
-        error_count,
-        plan_accuracy_ratio
-    FROM pg_stat_insights
-    WHERE calls > 50
-)
-SELECT 
-    query,
-    calls,
-    ARRAY_AGG(DISTINCT alert_type) AS alerts
-FROM (
-    SELECT query, calls, 'P95 > 1s' AS alert_type 
-    FROM alerts WHERE exec_time_p95 > 1000
-    UNION ALL
-    SELECT query, calls, 'Cache < 80%' 
-    FROM alerts WHERE cache_hit_ratio < 0.8
-    UNION ALL
-    SELECT query, calls, 'Has Errors' 
-    FROM alerts WHERE error_count > 0
-    UNION ALL
-    SELECT query, calls, 'Plan Error > 5x' 
-    FROM alerts WHERE plan_accuracy_ratio > 5 OR plan_accuracy_ratio < 0.2
-) sub
-GROUP BY query, calls
-HAVING COUNT(*) > 1
-ORDER BY COUNT(*) DESC;
-```
-
-### Historical Trend Analysis
-
-```sql
--- Compare current vs previous bucket
-WITH current_bucket AS (
-    SELECT * FROM pg_stat_insights_by_bucket 
-    WHERE bucket_id = (SELECT MAX(bucket_id) FROM pg_stat_insights_by_bucket)
-),
-previous_bucket AS (
-    SELECT * FROM pg_stat_insights_by_bucket 
-    WHERE bucket_id = (SELECT MAX(bucket_id) FROM pg_stat_insights_by_bucket) - 1
-)
-SELECT 
-    'Current' AS period,
-    c.total_calls,
-    ROUND(c.avg_exec_time::numeric, 2) AS avg_ms,
-    c.total_rows,
-    ROUND((c.avg_cache_hit_ratio * 100)::numeric, 1) AS cache_pct,
-    ROUND(((c.avg_exec_time - p.avg_exec_time) / NULLIF(p.avg_exec_time, 0) * 100)::numeric, 1) AS change_pct
-FROM current_bucket c, previous_bucket p;
-```
+**See [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) for complete examples**
 
 ---
 
-## 🏗️ Architecture
+## Architecture
+
+## Architecture
 
 ### Data Structure
 
@@ -751,7 +456,7 @@ Shared Memory (Size: pg_stat_statements.max * ~15KB)
 
 ---
 
-## 🔒 Security & Privacy
+## Security & Privacy
 
 ### Sensitive Data Protection
 
@@ -776,36 +481,7 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO monitoring_user;
 
 ---
 
-## 🧪 Testing
-
-```bash
-# Run all regression tests
-make installcheck
-
-# Run specific test suite
-psql -f sql/select.sql
-psql -f sql/dml.sql
-psql -f sql/planning.sql
-psql -f sql/user_activity.sql
-```
-
-### Test Coverage
-
-- ✅ SELECT queries (all variants)
-- ✅ DML operations (INSERT/UPDATE/DELETE)
-- ✅ DDL commands
-- ✅ Utility commands
-- ✅ Cursors
-- ✅ Planning statistics
-- ✅ WAL tracking
-- ✅ Parallel queries
-- ✅ Extended protocol
-- ✅ User activity
-- ✅ Privileges
-
----
-
-## 🤝 Contributing
+## Contributing
 
 We welcome contributions! Areas for enhancement:
 
@@ -828,7 +504,7 @@ make installcheck
 
 ---
 
-## 📊 Benchmarks
+## Benchmarks
 
 ### Performance Overhead
 
@@ -846,34 +522,7 @@ Tested on PostgreSQL 17, pgbench scale=100, duration=300s:
 
 ---
 
-## 🆚 Detailed Comparison
-
-### vs pg_stat_statements
-
-**What pg_stat_insights adds:**
-- ✅ 101 additional metrics
-- ✅ Percentile statistics (p50/p95/p99)
-- ✅ Response time histograms
-- ✅ Plan accuracy tracking
-- ✅ Error monitoring
-- ✅ 9 additional pre-built views
-
-### vs pg_stat_monitor
-
-**What pg_stat_insights does better:**
-- ✅ 87 more metrics (145 vs 58)
-- ✅ Explicit percentiles (not just histograms)
-- ✅ Plan accuracy metrics
-- ✅ Enhanced error tracking
-- ✅ Memory breakdown
-- ✅ Better naming conventions
-- ✅ More helper views (11 vs 5)
-
-**See [FEATURE_COMPARISON.md](FEATURE_COMPARISON.md) for complete analysis.**
-
----
-
-## 📖 Documentation
+## Documentation
 
 - [Complete Metrics List](METRICS_COUNT.md) - All 145 metrics documented
 - [Feature Comparison](FEATURE_COMPARISON.md) - vs pg_stat_statements & pg_stat_monitor
@@ -882,7 +531,7 @@ Tested on PostgreSQL 17, pgbench scale=100, duration=300s:
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Extension won't load
 
@@ -923,27 +572,17 @@ SELECT pg_stat_insights_reset();
 
 ---
 
-## 📜 License
+## License
 
-This project is licensed under the same license as PostgreSQL.
+This project is licensed under the MIT License.
 
-**Copyright (c) 2024-2025, pgElephant, Inc.**  
-Portions Copyright (c) 2008-2025, PostgreSQL Global Development Group
+**Copyright (c) 2024-2025, pgElephant, Inc.**
 
-See [LICENSE](LICENSE) for details.
-
----
-
-## 🙏 Acknowledgments
-
-Built upon the excellent work of:
-- PostgreSQL `pg_stat_statements` extension
-- Percona `pg_stat_monitor` for histogram inspiration
-- The PostgreSQL community
+See [LICENSE](LICENSE) for full license text.
 
 ---
 
-## 📞 Support
+## Support
 
 - **Documentation**: https://docs.pgelephant.com/pg_stat_insights
 - **Issues**: https://github.com/pgelephant/pg_stat_insights/issues
@@ -952,7 +591,7 @@ Built upon the excellent work of:
 
 ---
 
-## ⭐ Star Us!
+## Star Us!
 
 If you find pg_stat_insights useful, please ⭐ star this repository!
 
