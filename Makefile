@@ -3,7 +3,6 @@
 # Makefile
 #      Build configuration for pg_stat_insights
 # Copyright (c) 2024-2025, pgElephant, Inc.
-
 # Copyright (c) 2008-2025, PostgreSQL Global Development Group
 #
 # IDENTIFICATION
@@ -26,10 +25,8 @@ REGRESS_OPTS = --temp-config $(top_srcdir)/contrib/pg_stat_insights/pg_stat_insi
 REGRESS = select dml cursors utility level_tracking planning \
 	user_activity wal entry_timestamp privileges extended \
 	parallel cleanup oldextversions squashing
-# Disabled because these tests require "shared_preload_libraries=pg_stat_statements",
-# which typical installcheck users do not have (e.g. buildfarm clients).
-NO_INSTALLCHECK = 1
 
+NO_INSTALLCHECK = 1
 TAP_TESTS = 1
 
 ifdef USE_PGXS

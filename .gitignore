@@ -1,0 +1,28 @@
+# Build artifacts
+*.o
+*.so
+*.dylib
+*.a
+*.bc
+
+# Backup files
+*.bak
+
+# Test artifacts
+results/
+regression.diffs
+regression.out
+tmp_check/
+tmp_check_iso/
+log/
+output_iso/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

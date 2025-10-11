@@ -210,6 +210,128 @@ typedef struct Counters
 											 * to be launched */
 	int64		parallel_workers_launched;	/* # of parallel workers actually
 											 * launched */
+	
+	/* Enhanced features beyond pg_stat_statements */
+	int32		query_complexity;	/* query complexity score */
+	int32		query_length;		/* length of the query string */
+	int32		param_count;		/* number of parameters in the query */
+	int32		plan_type;			/* type of execution plan (seq/index/bitmap) */
+	double		plan_cost;			/* estimated plan cost */
+	int64		plan_rows_estimated; /* estimated rows from plan */
+	int64		plan_rows_actual;	/* actual rows processed */
+	char		wait_event[64];		/* last wait event */
+	int32		lock_count;			/* number of locks acquired */
+	int64		temp_files;			/* number of temp files used */
+	double		cache_hit_rate;		/* calculated cache hit rate */
+	int32		error_count;		/* number of errors */
+	char		last_error[128];	/* last error message */
+	double		exec_time_p50;		/* execution time 50th percentile */
+	double		exec_time_p95;		/* execution time 95th percentile */
+	double		exec_time_p99;		/* execution time 99th percentile */
+	int64		memory_usage;		/* memory usage in bytes */
+	char		application_name[64]; /* source application name */
+	int32		backend_pid;		/* backend process id */
+	int64		transaction_id;		/* transaction id */
+	int32		retry_count;		/* number of statement retries */
+	char		client_ip[64];		/* client IP address */
+	char		relations[256];		/* comma-separated list of tables */
+	int32		cmd_type;			/* command type: 1=SELECT, 2=UPDATE, etc */
+	char		cmd_type_text[16];	/* command type as text */
+	
+	/* Enhanced pg_stat_insights features (BEYOND pg_stat_statements + pg_stat_monitor) */
+	
+	/* Time-series & Bucket tracking */
+	int64		bucket_id;			/* time bucket identifier */
+	TimestampTz	bucket_start_time;	/* bucket start timestamp */
+	TimestampTz	first_seen;			/* timestamp when query was first seen */
+	TimestampTz	last_seen;			/* timestamp when query was last executed */
+	int32		bucket_calls;		/* calls in current bucket */
+	double		bucket_total_time;	/* total time in current bucket */
+	
+	/* Response time histogram (10 buckets) */
+	int64		resp_time_histogram[10]; /* response time histogram buckets:
+										  * [0]=<1ms, [1]=1-10ms, [2]=10-100ms,
+										  * [3]=100ms-1s, [4]=1-10s, [5]=10-60s,
+										  * [6]=1-5min, [7]=5-10min, [8]=10-30min, [9]=>30min */
+	
+	/* Buffer I/O histogram (distribution of buffer reads) */
+	int64		io_histogram[5];	/* I/O intensity histogram:
+									 * [0]=0 blocks, [1]=1-10, [2]=11-100,
+									 * [3]=101-1000, [4]=>1000 */
+	
+	/* Row count histogram (distribution of rows returned) */
+	int64		rows_histogram[5];	/* Rows returned histogram:
+									 * [0]=0 rows, [1]=1-10, [2]=11-100,
+									 * [3]=101-1000, [4]=>1000 */
+	
+	/* Query plan analysis */
+	char		query_plan[8192];	/* full query plan text (EXPLAIN output) */
+	int32		plan_node_count;	/* number of nodes in plan tree */
+	int32		plan_max_depth;		/* maximum depth of plan tree */
+	bool		uses_index;			/* whether query uses index scan */
+	bool		uses_seq_scan;		/* whether query uses sequential scan */
+	bool		uses_bitmap_scan;	/* whether query uses bitmap scan */
+	bool		uses_hash_join;		/* whether query uses hash join */
+	bool		uses_merge_join;	/* whether query uses merge join */
+	bool		uses_nested_loop;	/* whether query uses nested loop */
+	int32		index_scans;		/* number of index scans in plan */
+	int32		seq_scans;			/* number of sequential scans in plan */
+	
+	/* Parameter tracking */
+	char		query_params[1024];	/* actual parameter values (if enabled) */
+	int32		distinct_param_values; /* count of unique parameter combinations */
+	
+	/* Query classification & metadata */
+	char		sql_comments[512];	/* extracted SQL comments */
+	char		query_fingerprint[64]; /* MD5 hash of query structure */
+	int32		query_nesting_level; /* nesting depth when executed */
+	bool		is_ddl;				/* is DDL statement */
+	bool		is_dml;				/* is DML statement */
+	bool		is_select;			/* is SELECT statement */
+	bool		is_utility;			/* is utility command */
+	
+	/* State & lifecycle tracking */
+	int32		state_changes;		/* number of state transitions */
+	int64		vacuum_count;		/* times query triggered vacuum */
+	int64		analyze_count;		/* times query triggered analyze */
+	
+	/* Network & latency */
+	double		network_latency_avg; /* average network round-trip time */
+	double		network_latency_max; /* maximum network latency */
+	int64		network_bytes_sent;	/* bytes sent to client */
+	int64		network_bytes_received; /* bytes received from client */
+	
+	/* Cache & memory details */
+	int64		shared_mem_bytes;	/* shared memory used */
+	int64		local_mem_bytes;	/* local memory used */
+	int64		temp_mem_bytes;		/* temporary memory used */
+	double		cache_eviction_rate; /* rate of cache evictions */
+	
+	/* Statement lifecycle */
+	int64		total_prepare_count; /* prepared statement executions */
+	int64		total_bind_count;	/* bind operations */
+	int64		total_execute_count; /* execute operations */
+	double		parse_time_total;	/* total parse time */
+	double		rewrite_time_total;	/* total rewrite time */
+	
+	/* Table access patterns */
+	int64		heap_blks_hit;		/* heap blocks hit in buffer */
+	int64		heap_blks_read;		/* heap blocks read from disk */
+	int64		index_blks_hit;		/* index blocks hit in buffer */
+	int64		index_blks_read;	/* index blocks read from disk */
+	int64		toast_blks_hit;		/* TOAST blocks hit */
+	int64		toast_blks_read;	/* TOAST blocks read */
+	
+	/* Checkpoint & WAL detail */
+	int64		checkpoint_sync_count; /* checkpoints during execution */
+	int64		wal_sync_count;		/* WAL syncs performed */
+	double		wal_write_time;		/* time writing WAL */
+	
+	/* Connection & session context */
+	char		database_name[64];	/* database name */
+	char		user_name[64];		/* user name (text) */
+	char		host_name[256];		/* client hostname (if resolved) */
+	int32		connection_type;	/* 1=local, 2=tcp, 3=ssl */
 } Counters;
 
 /*
@@ -298,6 +420,14 @@ static bool pgss_track_utility = true;	/* whether to track utility commands */
 static bool pgss_track_planning = false;	/* whether to track planning
 											 * duration */
 static bool pgss_save = true;	/* whether to save stats across shutdown */
+
+/* Enhanced tracking options */
+static bool pgss_track_histograms = true;	/* track response time histograms */
+static bool pgss_capture_parameters = false; /* capture actual query parameters */
+static bool pgss_capture_plan_text = false; /* capture full EXPLAIN plan text */
+static bool pgss_capture_comments = true;	/* extract and store SQL comments */
+static int	pgss_bucket_time = 60;			/* bucket interval in seconds (0=disabled) */
+static int	pgss_max_buckets = 10;			/* maximum number of buckets to keep */
 
 #define pgss_enabled(level) \
 	(!IsParallelWorker() && \
@@ -461,6 +591,77 @@ _PG_init(void)
 							 NULL,
 							 NULL,
 							 NULL);
+
+	/* pg_stat_insights enhanced features */
+	DefineCustomBoolVariable("pg_stat_insights.track_histograms",
+							 "Track response time histogram distribution.",
+							 NULL,
+							 &pgss_track_histograms,
+							 true,
+							 PGC_SUSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
+
+	DefineCustomBoolVariable("pg_stat_insights.capture_parameters",
+							 "Capture actual query parameter values (may expose sensitive data).",
+							 NULL,
+							 &pgss_capture_parameters,
+							 false,
+							 PGC_SUSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
+
+	DefineCustomBoolVariable("pg_stat_insights.capture_plan_text",
+							 "Capture full EXPLAIN plan text (high storage cost).",
+							 NULL,
+							 &pgss_capture_plan_text,
+							 false,
+							 PGC_SUSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
+
+	DefineCustomBoolVariable("pg_stat_insights.capture_comments",
+							 "Extract and store SQL comments from queries.",
+							 NULL,
+							 &pgss_capture_comments,
+							 true,
+							 PGC_SUSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
+
+	DefineCustomIntVariable("pg_stat_insights.bucket_time",
+							"Time interval for bucket tracking in seconds (0 = disabled).",
+							NULL,
+							&pgss_bucket_time,
+							60,
+							0,
+							3600,
+							PGC_SUSET,
+							GUC_UNIT_S,
+							NULL,
+							NULL,
+							NULL);
+
+	DefineCustomIntVariable("pg_stat_insights.max_buckets",
+							"Maximum number of time buckets to retain.",
+							NULL,
+							&pgss_max_buckets,
+							10,
+							1,
+							100,
+							PGC_SUSET,
+							0,
+							NULL,
+							NULL,
+							NULL);
 
 	MarkGUCPrefixReserved("pg_stat_statements");
 
