@@ -1,0 +1,90 @@
+name: Run TAP Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'pg_stat_insights.c'
+      - 'pg_stat_insights--1.0.sql'
+      - 't/**'
+      - 'Makefile'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libreadline-dev zlib1g-dev flex bison libxml2-dev libxslt-dev libssl-dev libxml2-utils xsltproc
+      
+      - name: Download PostgreSQL 18 source
+        run: |
+          cd /tmp
+          wget -q https://ftp.postgresql.org/pub/source/v18.0/postgresql-18.0.tar.gz
+          tar xzf postgresql-18.0.tar.gz
+          cd postgresql-18.0
+      
+      - name: Build and install PostgreSQL 18
+        run: |
+          cd /tmp/postgresql-18.0
+          ./configure --prefix=/usr/local/pgsql18 --enable-tap-tests
+          make -j$(nproc)
+          sudo make install
+          sudo chown -R $(whoami) /usr/local/pgsql18
+      
+      - name: Add PostgreSQL to PATH
+        run: |
+          echo "/usr/local/pgsql18/bin" >> $GITHUB_PATH
+          echo "PG_CONFIG=/usr/local/pgsql18/bin/pg_config" >> $GITHUB_ENV
+      
+      - name: Build pg_stat_insights
+        run: |
+          export PATH=/usr/local/pgsql18/bin:$PATH
+          export PG_CONFIG=/usr/local/pgsql18/bin/pg_config
+          make clean
+          make
+          sudo make install
+      
+      - name: Verify build
+        run: |
+          ls -lh /usr/local/pgsql18/lib/pg_stat_insights.so || ls -lh /usr/local/pgsql18/lib/pg_stat_insights.dylib || true
+          ls -lh /usr/local/pgsql18/share/extension/pg_stat_insights*
+      
+      - name: Run TAP tests
+        run: |
+          export PATH=/usr/local/pgsql18/bin:$PATH
+          export PG_BIN=/usr/local/pgsql18/bin
+          chmod +x run_all_tests.sh
+          ./run_all_tests.sh
+      
+      - name: Test results summary
+        if: always()
+        run: |
+          echo "════════════════════════════════════════════════════════════"
+          echo "TAP TEST RESULTS"
+          echo "════════════════════════════════════════════════════════════"
+          echo ""
+          echo "PostgreSQL Version: 18.0"
+          echo "Extension: pg_stat_insights v1.0"
+          echo "Test Framework: StatsInsightManager.pm"
+          echo ""
+          ls -1 t/0*.pl | wc -l | xargs echo "Test Files:"
+          echo ""
+          echo "Check output above for detailed results"
+      
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tap-test-logs
+          path: |
+            /tmp/pg_stat_insights_test_*/logfile
+          retention-days: 7
+          if-no-files-found: ignore
+

@@ -26,7 +26,6 @@ REGRESS = select dml cursors utility level_tracking planning \
 	user_activity wal entry_timestamp privileges extended \
 	parallel cleanup oldextversions squashing
 
-NO_INSTALLCHECK = 1
 TAP_TESTS = 1
 
 PG_CONFIG = pg_config

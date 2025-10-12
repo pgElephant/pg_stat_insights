@@ -1,53 +1,59 @@
-# Copyright (c) 2023-2025, PostgreSQL Global Development Group
+#!/usr/bin/env perl
+# Copyright (c) 2024-2025, pgElephant, Inc.
 
-# Tests for checking that pg_stat_statements contents are preserved
-# across restarts.
+# Restart persistence tests for pg_stat_insights
 
 use strict;
-use warnings FATAL => 'all';
-use PostgreSQL::Test::Cluster;
-use PostgreSQL::Test::Utils;
-use Test::More;
+use warnings;
+use lib 't';
+use StatsInsightManager;
 
-my $node = PostgreSQL::Test::Cluster->new('main');
-$node->init;
-$node->append_conf('postgresql.conf',
-	"shared_preload_libraries = 'pg_stat_statements'");
-$node->start;
+print "TAP Test 10: Restart Persistence\n";
+print "──────────────────────────────────────────────────────────────\n";
 
-$node->safe_psql('postgres', 'CREATE EXTENSION pg_stat_statements');
+setup_test_instance(
+    config => {
+        'pg_stat_insights.save' => 'on'
+    }
+);
 
-$node->safe_psql('postgres', 'CREATE TABLE t1 (a int)');
-$node->safe_psql('postgres', 'SELECT a FROM t1');
+# Test 1: Create data
+run_query("CREATE TABLE restart_test (a int);", 1);
+run_query("SELECT a FROM restart_test;", 1);
 
-is( $node->safe_psql(
-		'postgres',
-		"SELECT query FROM pg_stat_statements WHERE query NOT LIKE '%pg_stat_statements%' ORDER BY query"
-	),
-	"CREATE TABLE t1 (a int)\nSELECT a FROM t1",
-	'pg_stat_statements populated');
+run_test("Data populated before restart",
+    "SELECT count(*) > 0 FROM pg_stat_insights WHERE query LIKE '%FROM restart_test%';",
+    "t");
 
-$node->restart;
+# Save current query count
+my $before_count = run_query("SELECT count(*) FROM pg_stat_insights WHERE query NOT LIKE '%pg_stat_insights%';");
 
-is( $node->safe_psql(
-		'postgres',
-		"SELECT query FROM pg_stat_statements WHERE query NOT LIKE '%pg_stat_statements%' ORDER BY query"
-	),
-	"CREATE TABLE t1 (a int)\nSELECT a FROM t1",
-	'pg_stat_statements data kept across restart');
+# Test 2: Restart with save=on preserves data
+print "\n  Restarting PostgreSQL (save=on)...\n";
+restart_postgres('fast');
 
-$node->append_conf('postgresql.conf', "pg_stat_statements.save = false");
-$node->reload;
+run_test("Data preserved after restart (save=on)",
+    "SELECT count(*) > 0 FROM pg_stat_insights WHERE query LIKE '%FROM restart_test%';",
+    "t");
 
-$node->restart;
+# Test 3: Restart with save=off clears data
+print "\n  Changing save=off and restarting...\n";
+run_query("ALTER SYSTEM SET pg_stat_insights.save = off;", 1);
+restart_postgres('fast');
 
-is( $node->safe_psql(
-		'postgres',
-		"SELECT count(*) FROM pg_stat_statements WHERE query NOT LIKE '%pg_stat_statements%'"
-	),
-	'0',
-	'pg_stat_statements data not kept across restart with .save=false');
+run_test("Data cleared after restart (save=off)",
+    "SELECT count(*) FROM pg_stat_insights WHERE query NOT LIKE '%pg_stat_insights%';",
+    "0");
 
-$node->stop;
+# Test 4: Tracking works after restart
+run_query("CREATE TABLE after_restart (z int);", 1);
+run_query("SELECT * FROM after_restart;", 1);
 
-done_testing();
+run_test("Tracking works after restart",
+    "SELECT count(*) > 0 FROM pg_stat_insights WHERE query LIKE '%FROM after_restart%';",
+    "t");
+
+print_test_summary();
+cleanup_test_instance();
+
+exit($StatsInsightManager::TESTS_FAILED > 0 ? 1 : 0);

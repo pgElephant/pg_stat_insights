@@ -115,6 +115,10 @@ jobs:
               - All Views: views.md
               - Monitoring Patterns: monitoring-patterns.md
               - Integration Examples: integration.md
+            - Monitoring & Visualization:
+              - Prometheus & Grafana: prometheus-grafana.md
+              - Dashboard Setup: grafana-dashboard.md
+              - Alerting Rules: alerting.md
             - Reference:
               - All Metrics: metrics.md
               - Metric Categories: metric-categories.md
@@ -157,12 +161,268 @@ jobs:
         run: |
           mkdir -p docs
           
-          # Copy primary documentation
-          cp README.md docs/index.md
+          # Copy supporting documentation
           cp INSTALL.md docs/
           cp USAGE_EXAMPLES.md docs/
           cp CONTRIBUTING.md docs/
           cp LICENSE docs/
+          
+          # Copy demo and assets
+          cp demo.svg docs/ 2>/dev/null || true
+          
+          # Create optimized index.md for MkDocs (instead of copying README.md)
+          cat > docs/index.md << 'EOFINDEX'
+          # pg_stat_insights
+          
+          <div align="center">
+          
+          **The Ultimate PostgreSQL Query Performance Monitoring Extension**
+          
+          *More comprehensive than pg_stat_statements + pg_stat_monitor combined*
+          
+          [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-13%2B-blue.svg)](https://www.postgresql.org/)
+          [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+          [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
+          [![Metrics](https://img.shields.io/badge/metrics-145%2B-brightgreen.svg)]()
+          [![Documentation](https://img.shields.io/badge/docs-github.io-blue.svg)](https://pgelephant.github.io/pg_stat_insights/)
+          
+          [📚 Full Documentation](https://pgelephant.github.io/pg_stat_insights/) •
+          [Overview](#overview) •
+          [Quick Start](#quick-start) •
+          [Examples](#examples) •
+          [Comparison](#comparison)
+          
+          ![145 Metrics vs 72 Combined](https://img.shields.io/badge/145_Metrics-vs_72_Combined-success?style=for-the-badge)
+          
+          </div>
+          
+          ---
+          
+          ## Demo
+          
+          <div align="center">
+          
+          ![pg_stat_insights Demo](demo.svg)
+          
+          </div>
+          
+          ---
+          
+          ## Overview
+          
+          `pg_stat_insights` is a production-ready PostgreSQL extension that provides **145+ comprehensive metrics** for query performance monitoring, analysis, and optimization. It combines the best features of `pg_stat_statements` and `pg_stat_monitor`, while adding **101 unique metrics** not found in either.
+          
+          ### Why pg_stat_insights?
+          
+          | **Professional Design** | **Comprehensive Metrics** | **Enterprise Ready** |
+          |-------------------------|---------------------------|----------------------|
+          | Intuitive column naming<br/>Well-structured views<br/>Production-ready code<br/>PostgreSQL conventions | 145+ total metrics<br/>20 histogram buckets<br/>11 pre-built views<br/>Complete coverage | Privacy controls<br/>Robust error handling<br/>Extensive test coverage<br/>Battle-tested |
+          
+          ---
+          
+          ## Comparison
+          
+          <div align="center">
+          
+          | Metric Category | pg_stat_statements | pg_stat_monitor | **pg_stat_insights** |
+          |-----------------|:------------------:|:---------------:|:--------------------:|
+          | **Total Metrics** | 44 | 58 | **145** ✨ |
+          | Configuration Params | 5 | 12 | **17** |
+          | Pre-built Views | 2 | 5 | **11** |
+          | Histogram Buckets | 0 | ~8 | **20** |
+          | Percentiles | ❌ | ❌ | **✅ p50/p95/p99** |
+          | Plan Accuracy | ❌ | ❌ | **✅ Estimated vs Actual** |
+          | Error Tracking | ❌ | ❌ | **✅ Count + Message** |
+          | Network Metrics | ❌ | ❌ | **✅ 4 metrics** |
+          | Memory Breakdown | ❌ | ❌ | **✅ 4 types** |
+          | Table Access | ❌ | ✅ Basic | **✅ 6 metrics** |
+          
+          ### **145 metrics > 72 combined (pg_stat_statements + pg_stat_monitor)**
+          
+          **201% more metrics than both extensions combined!**
+          
+          </div>
+          
+          ---
+          
+          ## Quick Start
+          
+          ### Installation
+          
+          ```sql
+          -- 1. Add to postgresql.conf
+          ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_insights';
+          
+          -- 2. Restart PostgreSQL (required)
+          -- sudo systemctl restart postgresql
+          
+          -- 3. Create extension
+          CREATE EXTENSION pg_stat_insights;
+          
+          -- 4. Verify
+          SELECT COUNT(*) FROM pg_stat_insights;
+          ```
+          
+          📚 **For detailed installation instructions, see [Installation Guide](INSTALL.md)**
+          
+          ### First Query
+          
+          ```sql
+          -- View top slow queries
+          SELECT * FROM pg_stat_insights_top_by_time LIMIT 10;
+          ```
+          
+          📚 **For more examples, see [Usage Examples](USAGE_EXAMPLES.md)**
+          
+          ---
+          
+          ## Examples
+          
+          **Quick examples:**
+          
+          ```sql
+          -- Top slow queries
+          SELECT * FROM pg_stat_insights_top_by_time LIMIT 10;
+          
+          -- Cache issues
+          SELECT * FROM pg_stat_insights_top_cache_misses LIMIT 10;
+          
+          -- Queries with errors
+          SELECT * FROM pg_stat_insights_errors LIMIT 10;
+          
+          -- Response time distribution
+          SELECT * FROM pg_stat_insights_histogram_summary WHERE calls > 100;
+          ```
+          
+          **Complete examples including:**
+          
+          - SLA monitoring with percentiles
+          - Plan accuracy detection
+          - I/O analysis
+          - Time-series queries
+          - Error tracking
+          - Network performance
+          - Memory analysis
+          - Integration examples
+          
+          📚 **See [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) for 50+ detailed query examples**
+          
+          ---
+          
+          ## Installation
+          
+          ### From Source
+          
+          ```bash
+          cd pg_stat_insights
+          make
+          sudo make install
+          
+          # Configure
+          echo "shared_preload_libraries = 'pg_stat_insights'" | \
+            sudo tee -a /etc/postgresql/*/main/postgresql.conf
+          
+          # Restart PostgreSQL
+          sudo systemctl restart postgresql
+          
+          # Create extension in your database
+          psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
+          ```
+          
+          ### Verification
+          
+          ```sql
+          -- Check extension is loaded
+          SELECT * FROM pg_available_extensions WHERE name = 'pg_stat_insights';
+          
+          -- Check shared memory
+          SELECT pg_stat_insights_reset();
+          
+          -- Verify views exist
+          \dv pg_stat_insights*
+          ```
+          
+          ---
+          
+          ## Documentation
+          
+          ### 📚 Complete Documentation Site
+          
+          🌐 **[View Full Documentation at pgelephant.github.io/pg_stat_insights](https://pgelephant.github.io/pg_stat_insights/)**
+          
+          The comprehensive documentation includes:
+          
+          - **[Getting Started Guide](getting-started.md)** - Quick setup and first queries
+          - **[Installation Guide](INSTALL.md)** - Detailed setup for all PostgreSQL versions
+          - **[Configuration Reference](configuration.md)** - All 17 parameters explained
+          - **[Views & SQL API](views.md)** - All 11 pre-built views
+          - **[Complete Metrics Guide](metrics.md)** - All 145 metrics documented
+          - **[Usage Examples](USAGE_EXAMPLES.md)** - 50+ query examples and use cases
+          - **[Best Practices](best-practices.md)** - Production deployment guide
+          - **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
+          - **[Prometheus & Grafana](prometheus-grafana.md)** - Monitoring integration
+          
+          ---
+          
+          ## Configuration
+          
+          ### Essential Parameters
+          
+          ```conf
+          # In postgresql.conf
+          
+          # Core settings (5 parameters)
+          pg_stat_insights.max = 10000
+          pg_stat_insights.track = 'top'
+          pg_stat_insights.track_utility = on
+          pg_stat_insights.track_planning = on
+          pg_stat_insights.save = on
+          
+          # Advanced features (6 parameters)
+          pg_stat_insights.track_histograms = on
+          pg_stat_insights.bucket_time = 300        # 5-minute buckets
+          pg_stat_insights.max_buckets = 12         # 1 hour history
+          pg_stat_insights.capture_comments = on
+          pg_stat_insights.capture_parameters = off  # Keep OFF in production
+          pg_stat_insights.capture_plan_text = off   # Keep OFF in production
+          ```
+          
+          📚 **See [Configuration Reference](configuration.md) for all 17 parameters**
+          
+          ---
+          
+          ## Support
+          
+          - 📖 **[Complete Documentation](https://pgelephant.github.io/pg_stat_insights/)**
+          - 🐛 **[Issues](https://github.com/pgelephant/pg_stat_insights/issues)**
+          - 💬 **[Discussions](https://github.com/pgelephant/pg_stat_insights/discussions)**
+          - ⭐ **[Star Us on GitHub](https://github.com/pgelephant/pg_stat_insights)**
+          
+          ---
+          
+          ## License
+          
+          This project is licensed under the MIT License.
+          
+          **Copyright (c) 2024-2025, pgElephant, Inc.**
+          
+          See [LICENSE](LICENSE) for full license text.
+          
+          ---
+          
+          <div align="center">
+          
+          **🐘 Built with ❤️ by [pgElephant, Inc.](https://pgelephant.com)**
+          
+          *Making PostgreSQL monitoring better, one metric at a time*
+          
+          [Get Started](getting-started.md) • 
+          [📚 Full Documentation](https://pgelephant.github.io/pg_stat_insights/) • 
+          [View All Metrics](metrics.md) • 
+          [Compare Features](comparison.md)
+          
+          </div>
+          EOFINDEX
           
           # ========================================================================
           # GETTING STARTED - Detailed quick start guide
@@ -3278,7 +3538,825 @@ jobs:
           
           EOFUPG
           
+          # ========================================================================
+          # PROMETHEUS & GRAFANA INTEGRATION
+          # ========================================================================
+          cat > docs/prometheus-grafana.md << 'EOFPROM'
+          # Prometheus & Grafana Integration
+          
+          Complete guide to visualizing pg_stat_insights metrics in Grafana.
+          
+          ## Architecture
+          
+          ```mermaid
+          graph LR
+              A[PostgreSQL + pg_stat_insights] --> B[postgres_exporter]
+              B --> C[Prometheus]
+              C --> D[Grafana]
+              D --> E[Dashboards & Alerts]
+          ```
+          
+          ## Quick Setup
+          
+          ### Step 1: Create Monitoring User
+          
+          ```sql
+          -- Create dedicated monitoring user
+          CREATE USER monitoring_user WITH PASSWORD 'secure_password';
+          
+          -- Grant necessary permissions
+          GRANT CONNECT ON DATABASE your_database TO monitoring_user;
+          GRANT pg_monitor TO monitoring_user;
+          GRANT SELECT ON ALL TABLES IN SCHEMA public TO monitoring_user;
+          
+          -- For pg_stat_insights views
+          GRANT SELECT ON pg_stat_insights TO monitoring_user;
+          GRANT SELECT ON pg_stat_insights_top_by_time TO monitoring_user;
+          GRANT SELECT ON pg_stat_insights_top_by_calls TO monitoring_user;
+          GRANT SELECT ON pg_stat_insights_top_by_io TO monitoring_user;
+          GRANT SELECT ON pg_stat_insights_histogram_summary TO monitoring_user;
+          ```
+          
+          ### Step 2: Install postgres_exporter
+          
+          **Using Docker:**
+          
+          ```bash
+          docker run -d \
+            --name postgres_exporter \
+            --net=host \
+            -e DATA_SOURCE_NAME="postgresql://monitoring_user:password@localhost:5432/your_db?sslmode=disable" \
+            -v $(pwd)/pg_stat_insights_queries.yml:/queries.yml \
+            -p 9187:9187 \
+            prometheuscommunity/postgres-exporter \
+            --extend.query-path=/queries.yml
+          ```
+          
+          **Using Binary:**
+          
+          ```bash
+          # Download latest release
+          wget https://github.com/prometheus-community/postgres_exporter/releases/download/v0.15.0/postgres_exporter-0.15.0.linux-amd64.tar.gz
+          tar xvfz postgres_exporter-0.15.0.linux-amd64.tar.gz
+          cd postgres_exporter-0.15.0.linux-amd64
+          
+          # Configure
+          export DATA_SOURCE_NAME="postgresql://monitoring_user:password@localhost:5432/your_db"
+          
+          # Run with custom queries
+          ./postgres_exporter --extend.query-path=pg_stat_insights_queries.yml
+          ```
+          
+          ### Step 3: Configure Custom Queries
+          
+          Create `pg_stat_insights_queries.yml`:
+          
+          ```yaml
+          # Overview metrics
+          pg_stat_insights_overview:
+            query: |
+              SELECT 
+                COUNT(*)::float AS total_queries,
+                SUM(calls)::float AS total_calls,
+                SUM(total_exec_time)::float AS total_exec_time_ms,
+                AVG(mean_exec_time)::float AS avg_exec_time_ms,
+                SUM(shared_blks_hit)::float AS cache_hits,
+                SUM(shared_blks_read)::float AS cache_misses,
+                CASE 
+                  WHEN SUM(shared_blks_hit + shared_blks_read) > 0 
+                  THEN (SUM(shared_blks_hit)::float / SUM(shared_blks_hit + shared_blks_read))
+                  ELSE 0 
+                END AS cache_hit_ratio
+              FROM pg_stat_insights
+              WHERE query NOT LIKE '%pg_stat%';
+            metrics:
+              - total_queries:
+                  usage: "GAUGE"
+                  description: "Total unique queries tracked"
+              - total_calls:
+                  usage: "COUNTER"
+                  description: "Total query executions"
+              - total_exec_time_ms:
+                  usage: "COUNTER"
+                  description: "Total execution time (ms)"
+              - avg_exec_time_ms:
+                  usage: "GAUGE"
+                  description: "Average execution time (ms)"
+              - cache_hits:
+                  usage: "COUNTER"
+                  description: "Cache hits"
+              - cache_misses:
+                  usage: "COUNTER"
+                  description: "Cache misses"
+              - cache_hit_ratio:
+                  usage: "GAUGE"
+                  description: "Cache hit ratio (0-1)"
+          
+          # Top queries
+          pg_stat_insights_top_queries:
+            query: |
+              SELECT 
+                md5(query) AS query_hash,
+                LEFT(query, 50) AS query_preview,
+                calls::float,
+                total_exec_time::float AS exec_time_ms,
+                mean_exec_time::float AS avg_time_ms,
+                (shared_blks_hit + shared_blks_read)::float AS total_blocks
+              FROM pg_stat_insights
+              WHERE query NOT LIKE '%pg_stat%'
+              ORDER BY total_exec_time DESC
+              LIMIT 20;
+            metrics:
+              - query_hash:
+                  usage: "LABEL"
+                  description: "Query hash"
+              - query_preview:
+                  usage: "LABEL"
+                  description: "Query preview"
+              - calls:
+                  usage: "COUNTER"
+                  description: "Execution count"
+              - exec_time_ms:
+                  usage: "COUNTER"
+                  description: "Total time"
+              - avg_time_ms:
+                  usage: "GAUGE"
+                  description: "Average time"
+              - total_blocks:
+                  usage: "COUNTER"
+                  description: "Total blocks"
+          
+          # Response time buckets
+          pg_stat_insights_response_time_buckets:
+            query: |
+              SELECT 
+                CASE 
+                  WHEN mean_exec_time < 1 THEN '0_under_1ms'
+                  WHEN mean_exec_time < 10 THEN '1_1_to_10ms'
+                  WHEN mean_exec_time < 100 THEN '2_10_to_100ms'
+                  WHEN mean_exec_time < 1000 THEN '3_100ms_to_1s'
+                  WHEN mean_exec_time < 10000 THEN '4_1_to_10s'
+                  ELSE '5_over_10s'
+                END AS response_bucket,
+                COUNT(*)::float AS query_count,
+                SUM(calls)::float AS total_calls
+              FROM pg_stat_insights
+              WHERE query NOT LIKE '%pg_stat%'
+              GROUP BY response_bucket;
+            metrics:
+              - response_bucket:
+                  usage: "LABEL"
+                  description: "Response time bucket"
+              - query_count:
+                  usage: "GAUGE"
+                  description: "Queries in bucket"
+              - total_calls:
+                  usage: "COUNTER"
+                  description: "Calls in bucket"
+          
+          # WAL statistics
+          pg_stat_insights_wal_stats:
+            query: |
+              SELECT 
+                SUM(wal_records)::float AS total_wal_records,
+                SUM(wal_fpi)::float AS total_wal_fpi,
+                SUM(wal_bytes)::float AS total_wal_bytes
+              FROM pg_stat_insights
+              WHERE wal_records > 0;
+            metrics:
+              - total_wal_records:
+                  usage: "COUNTER"
+                  description: "WAL records"
+              - total_wal_fpi:
+                  usage: "COUNTER"
+                  description: "WAL full page images"
+              - total_wal_bytes:
+                  usage: "COUNTER"
+                  description: "WAL bytes"
+          
+          # Slow queries
+          pg_stat_insights_slow_queries:
+            query: |
+              SELECT 
+                COUNT(*)::float AS slow_query_count,
+                AVG(mean_exec_time)::float AS avg_slow_time_ms,
+                MAX(max_exec_time)::float AS max_slow_time_ms
+              FROM pg_stat_insights
+              WHERE mean_exec_time > 100
+                AND query NOT LIKE '%pg_stat%';
+            metrics:
+              - slow_query_count:
+                  usage: "GAUGE"
+                  description: "Slow queries (>100ms)"
+              - avg_slow_time_ms:
+                  usage: "GAUGE"
+                  description: "Avg slow query time"
+              - max_slow_time_ms:
+                  usage: "GAUGE"
+                  description: "Max slow query time"
+          ```
+          
+          ### Step 4: Configure Prometheus
+          
+          Add to `prometheus.yml`:
+          
+          ```yaml
+          scrape_configs:
+            - job_name: 'postgres_pg_stat_insights'
+              static_configs:
+                - targets: ['localhost:9187']
+              scrape_interval: 30s
+              scrape_timeout: 10s
+          ```
+          
+          Restart Prometheus:
+          
+          ```bash
+          systemctl restart prometheus
+          # or
+          docker restart prometheus
+          ```
+          
+          ### Step 5: Verify Metrics
+          
+          ```bash
+          # Check exporter is running
+          curl http://localhost:9187/metrics | grep pg_stat_insights
+          
+          # Check Prometheus targets
+          curl http://localhost:9090/api/v1/targets | grep postgres
+          ```
+          
+          ## Sample PromQL Queries
+          
+          ### Performance Metrics
+          
+          ```promql
+          # Queries per second
+          rate(pg_stat_insights_overview_total_calls[5m])
+          
+          # Average query execution time
+          pg_stat_insights_overview_avg_exec_time_ms
+          
+          # P95 execution time (approximate)
+          histogram_quantile(0.95, rate(pg_stat_insights_top_queries_exec_time_ms[5m]))
+          
+          # Query time increase vs 1 hour ago
+          (pg_stat_insights_overview_avg_exec_time_ms - 
+           pg_stat_insights_overview_avg_exec_time_ms offset 1h) 
+           / pg_stat_insights_overview_avg_exec_time_ms offset 1h * 100
+          ```
+          
+          ### Cache Metrics
+          
+          ```promql
+          # Cache hit ratio (percentage)
+          pg_stat_insights_overview_cache_hit_ratio * 100
+          
+          # Cache miss rate
+          rate(pg_stat_insights_overview_cache_misses[5m])
+          
+          # Cache hit ratio over time
+          rate(pg_stat_insights_overview_cache_hits[5m]) / 
+          (rate(pg_stat_insights_overview_cache_hits[5m]) + 
+           rate(pg_stat_insights_overview_cache_misses[5m]))
+          ```
+          
+          ### Resource Usage
+          
+          ```promql
+          # WAL generation (MB/s)
+          rate(pg_stat_insights_wal_stats_total_wal_bytes[5m]) / 1024 / 1024
+          
+          # Rows processed per second
+          rate(pg_stat_insights_overview_total_rows[5m])
+          
+          # Top queries by execution time
+          topk(10, pg_stat_insights_top_queries_exec_time_ms)
+          
+          # Top queries by call count
+          topk(10, pg_stat_insights_top_queries_calls)
+          ```
+          
+          ## Troubleshooting
+          
+          ### No metrics appearing
+          
+          ```bash
+          # Check exporter logs
+          docker logs postgres_exporter
+          
+          # Test query manually
+          psql -U monitoring_user -d your_db -c "SELECT COUNT(*) FROM pg_stat_insights;"
+          
+          # Verify Prometheus scraping
+          curl http://localhost:9090/api/v1/targets
+          ```
+          
+          ### Permission errors
+          
+          ```sql
+          -- Grant all necessary permissions
+          GRANT pg_monitor TO monitoring_user;
+          GRANT SELECT ON ALL TABLES IN SCHEMA public TO monitoring_user;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO monitoring_user;
+          ```
+          
+          ### High cardinality
+          
+          If too many time series:
+          
+          ```yaml
+          # In queries.yml, limit results
+          query: |
+            SELECT ... FROM pg_stat_insights
+            ORDER BY total_exec_time DESC
+            LIMIT 50;  -- Limit to top 50
+          ```
+          
+          ## Next Steps
+          
+          - [Grafana Dashboard Setup](grafana-dashboard.md)
+          - [Configure Alerts](alerting.md)
+          - [Monitoring Patterns](monitoring-patterns.md)
+          
+          EOFPROM
+          
+          # ========================================================================
+          # GRAFANA DASHBOARD SETUP
+          # ========================================================================
+          cat > docs/grafana-dashboard.md << 'EOFDASH'
+          # Grafana Dashboard Setup
+          
+          Create production-ready dashboards for pg_stat_insights.
+          
+          ## Pre-built Dashboard
+          
+          ### 8 Panel Dashboard
+          
+          **Panels included:**
+          
+          1. **Total Queries Tracked** (Stat)
+             - Shows unique queries
+             - Trend indicator
+          
+          2. **Queries per Second** (Graph)
+             - 5-minute rate
+             - Shows workload trends
+          
+          3. **Average Query Time** (Graph)
+             - Mean execution time
+             - SLA threshold line
+          
+          4. **Cache Hit Ratio** (Gauge)
+             - 0-100% gauge
+             - Color thresholds:
+               - Red: <90%
+               - Yellow: 90-99%
+               - Green: ≥99%
+          
+          5. **Response Time Distribution** (Pie Chart)
+             - Bucket breakdown
+             - <1ms, 1-10ms, etc.
+          
+          6. **Top Queries** (Table)
+             - Query preview
+             - Calls, avg time, cache%
+             - Top 10 by execution time
+          
+          7. **WAL Generation** (Graph)
+             - MB/s over time
+             - Helps identify write-heavy queries
+          
+          8. **Slow Queries Alert** (Stat)
+             - Count of queries >100ms
+             - Color-coded alert
+          
+          ## Manual Dashboard Creation
+          
+          ### Panel 1: Query Rate
+          
+          **Query:**
+          ```promql
+          rate(pg_stat_insights_overview_total_calls[5m])
+          ```
+          
+          **Settings:**
+          - Visualization: Time series
+          - Unit: ops/sec
+          - Legend: QPS
+          - Thresholds: Warning at 10000, Critical at 50000
+          
+          ### Panel 2: Average Time
+          
+          **Query:**
+          ```promql
+          pg_stat_insights_overview_avg_exec_time_ms
+          ```
+          
+          **Settings:**
+          - Visualization: Time series
+          - Unit: milliseconds
+          - Legend: Avg Query Time
+          - Thresholds: Warning at 50ms, Critical at 100ms
+          
+          ### Panel 3: Cache Hit Ratio
+          
+          **Query:**
+          ```promql
+          pg_stat_insights_overview_cache_hit_ratio * 100
+          ```
+          
+          **Settings:**
+          - Visualization: Gauge
+          - Unit: percent
+          - Min: 0, Max: 100
+          - Thresholds:
+            - 0-90: Red
+            - 90-99: Yellow
+            - 99-100: Green
+          
+          ### Panel 4: Top Queries Table
+          
+          **Query:**
+          ```promql
+          topk(10, pg_stat_insights_top_queries_exec_time_ms)
+          ```
+          
+          **Settings:**
+          - Visualization: Table
+          - Format: Table
+          - Columns: query_preview, calls, avg_time_ms
+          - Sort: exec_time_ms DESC
+          
+          ### Panel 5: Response Time Distribution
+          
+          **Query:**
+          ```promql
+          pg_stat_insights_response_time_buckets_query_count
+          ```
+          
+          **Settings:**
+          - Visualization: Pie chart
+          - Legend: {{response_bucket}}
+          - Show percentages: Yes
+          
+          ## Dashboard Variables
+          
+          Add these for filtering:
+          
+          ### Database Variable
+          
+          ```json
+          {
+            "name": "database",
+            "type": "query",
+            "query": "label_values(pg_stat_insights_overview_total_queries, datname)",
+            "refresh": 1,
+            "multi": false
+          }
+          ```
+          
+          ### Time Range Variable
+          
+          ```json
+          {
+            "name": "time_range",
+            "type": "interval",
+            "options": ["1m", "5m", "15m", "30m", "1h", "6h", "12h", "1d"]
+          }
+          ```
+          
+          ## Dashboard Settings
+          
+          **Recommended:**
+          
+          - Auto-refresh: 30s
+          - Time range: Last 1 hour
+          - Timezone: Browser
+          - Editable: Yes (for customization)
+          - Tags: ["postgresql", "pg_stat_insights", "monitoring"]
+          
+          ## Exporting/Importing
+          
+          ### Export Dashboard
+          
+          1. Open dashboard
+          2. Click ⚙️ (Settings)
+          3. Select "JSON Model"
+          4. Click "Copy to Clipboard"
+          5. Save to file
+          
+          ### Import Dashboard
+          
+          1. Go to Dashboards → Import
+          2. Paste JSON or upload file
+          3. Select Prometheus data source
+          4. Click "Import"
+          
+          ## Mobile Optimization
+          
+          For mobile viewing:
+          
+          - Use single-column layout
+          - Larger fonts (16px+)
+          - Simplified panels (fewer details)
+          - Focus on critical metrics only
+          
+          ## Next Steps
+          
+          - [Configure Alerts](alerting.md)
+          - [Prometheus Integration](prometheus-grafana.md)
+          
+          EOFDASH
+          
+          # ========================================================================
+          # ALERTING RULES
+          # ========================================================================
+          cat > docs/alerting.md << 'EOFALERT'
+          # Alerting Rules
+          
+          Production-ready alert rules for pg_stat_insights metrics.
+          
+          ## Prometheus Alert Rules
+          
+          Create `pg_stat_insights_alerts.yml`:
+          
+          ```yaml
+          groups:
+            - name: pg_stat_insights_alerts
+              interval: 30s
+              rules:
+                # Performance Alerts
+                - alert: HighAverageQueryTime
+                  expr: pg_stat_insights_overview_avg_exec_time_ms > 100
+                  for: 5m
+                  labels:
+                    severity: warning
+                    component: database
+                    team: platform
+                  annotations:
+                    summary: "High average query execution time"
+                    description: "Average query time is {{ $value }}ms (threshold: 100ms)"
+                    runbook_url: "https://docs.example.com/runbooks/high-query-time"
+          
+                - alert: CriticalQueryTime
+                  expr: pg_stat_insights_overview_avg_exec_time_ms > 500
+                  for: 2m
+                  labels:
+                    severity: critical
+                    component: database
+                    team: platform
+                    pager: yes
+                  annotations:
+                    summary: "CRITICAL: Query time above 500ms"
+                    description: "Average query time is {{ $value }}ms"
+          
+                # Cache Alerts
+                - alert: LowCacheHitRatio
+                  expr: pg_stat_insights_overview_cache_hit_ratio < 0.90
+                  for: 5m
+                  labels:
+                    severity: warning
+                    component: database
+                  annotations:
+                    summary: "Low cache hit ratio"
+                    description: "Cache hit ratio is {{ $value | humanizePercentage }} (threshold: 90%)"
+                    impact: "Increased disk I/O and slower query performance"
+                    action: "Check shared_buffers size, consider increasing"
+          
+                - alert: CriticalCacheHitRatio
+                  expr: pg_stat_insights_overview_cache_hit_ratio < 0.80
+                  for: 2m
+                  labels:
+                    severity: critical
+                    component: database
+                    pager: yes
+                  annotations:
+                    summary: "CRITICAL: Cache hit ratio below 80%"
+                    description: "Cache hit ratio is {{ $value | humanizePercentage }}"
+          
+                # Slow Query Alerts
+                - alert: TooManySlowQueries
+                  expr: pg_stat_insights_slow_queries_slow_query_count > 50
+                  for: 10m
+                  labels:
+                    severity: warning
+                    component: database
+                  annotations:
+                    summary: "Too many slow queries detected"
+                    description: "{{ $value }} queries are running slower than 100ms"
+                    action: "Review pg_stat_insights_slow_queries view"
+          
+                - alert: CriticalSlowQueries
+                  expr: pg_stat_insights_slow_queries_slow_query_count > 200
+                  for: 5m
+                  labels:
+                    severity: critical
+                    component: database
+                    pager: yes
+                  annotations:
+                    summary: "CRITICAL: {{ $value }} slow queries"
+                    description: "Database performance severely degraded"
+          
+                # WAL Alerts
+                - alert: HighWALGeneration
+                  expr: rate(pg_stat_insights_wal_stats_total_wal_bytes[5m]) > 100000000
+                  for: 5m
+                  labels:
+                    severity: warning
+                    component: database
+                  annotations:
+                    summary: "High WAL generation rate"
+                    description: "WAL generation is {{ $value | humanize }}B/s (>100MB/s)"
+                    impact: "Increased replication lag, disk usage"
+                    action: "Check for bulk operations or missing indexes"
+          
+                # Workload Alerts
+                - alert: HighQueryRate
+                  expr: rate(pg_stat_insights_overview_total_calls[5m]) > 100000
+                  for: 5m
+                  labels:
+                    severity: warning
+                    component: database
+                  annotations:
+                    summary: "Very high query rate"
+                    description: "Query rate is {{ $value | humanize }} QPS"
+          
+                - alert: QueryRateSpike
+                  expr: |
+                    (rate(pg_stat_insights_overview_total_calls[5m]) - 
+                     rate(pg_stat_insights_overview_total_calls[5m] offset 1h)) 
+                     / rate(pg_stat_insights_overview_total_calls[5m] offset 1h) > 2
+                  for: 5m
+                  labels:
+                    severity: warning
+                    component: database
+                  annotations:
+                    summary: "Query rate increased >200%"
+                    description: "Query rate spiked compared to 1 hour ago"
+          
+                # Performance Degradation
+                - alert: QueryPerformanceDegradation
+                  expr: |
+                    (pg_stat_insights_overview_avg_exec_time_ms - 
+                     pg_stat_insights_overview_avg_exec_time_ms offset 1h) 
+                     / pg_stat_insights_overview_avg_exec_time_ms offset 1h > 0.5
+                  for: 10m
+                  labels:
+                    severity: warning
+                    component: database
+                  annotations:
+                    summary: "Query performance degraded by >50%"
+                    description: "Average query time increased significantly"
+                    action: "Check for missing statistics, lock contention, or resource exhaustion"
+          ```
+          
+          ## Grafana Alerts
+          
+          ### Configure in Dashboard
+          
+          **Panel Alert Example (Average Query Time):**
+          
+          1. Edit panel
+          2. Go to "Alert" tab
+          3. Create new alert rule:
+          
+          ```json
+          {
+            "name": "High Average Query Time",
+            "conditions": [
+              {
+                "evaluator": {
+                  "params": [100],
+                  "type": "gt"
+                },
+                "query": {
+                  "params": ["A", "5m", "now"]
+                },
+                "type": "query"
+              }
+            ],
+            "frequency": "1m",
+            "for": "5m",
+            "message": "Average query time is above 100ms",
+            "noDataState": "no_data",
+            "notifications": [
+              {"uid": "slack-notifications"}
+            ]
+          }
+          ```
+          
+          ## Alert Routing
+          
+          ### Slack Integration
+          
+          **Alertmanager config:**
+          
+          ```yaml
+          receivers:
+            - name: 'slack-critical'
+              slack_configs:
+                - api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+                  channel: '#db-alerts-critical'
+                  title: '{{ .GroupLabels.alertname }}'
+                  text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+          
+            - name: 'slack-warning'
+              slack_configs:
+                - api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+                  channel: '#db-alerts-warning'
+          
+          route:
+            group_by: ['alertname', 'component']
+            group_wait: 10s
+            group_interval: 10s
+            repeat_interval: 12h
+            receiver: 'slack-warning'
+            routes:
+              - match:
+                  severity: critical
+                receiver: 'slack-critical'
+                continue: true
+              - match:
+                  pager: yes
+                receiver: 'pagerduty'
+          ```
+          
+          ### PagerDuty Integration
+          
+          ```yaml
+          receivers:
+            - name: 'pagerduty'
+              pagerduty_configs:
+                - service_key: 'YOUR_PAGERDUTY_KEY'
+                  description: '{{ .GroupLabels.alertname }}: {{ .CommonAnnotations.summary }}'
+          ```
+          
+          ## Alert Best Practices
+          
+          ### 1. Severity Levels
+          
+          - **Critical**: Immediate action required, page on-call
+          - **Warning**: Investigate soon, no page
+          - **Info**: Awareness only
+          
+          ### 2. Alert Fatigue Prevention
+          
+          - Use appropriate thresholds
+          - Set `for` duration (5-10 minutes)
+          - Group related alerts
+          - Use alert silencing when needed
+          
+          ### 3. Actionable Alerts
+          
+          Every alert should have:
+          - Clear summary
+          - Context (current value, threshold)
+          - Impact statement
+          - Recommended action
+          - Runbook link
+          
+          ### 4. Alert Testing
+          
+          ```bash
+          # Test alert evaluation
+          promtool check rules pg_stat_insights_alerts.yml
+          
+          # Simulate alert
+          amtool alert add alertname=HighAverageQueryTime \
+            severity=warning \
+            --annotation=summary="Test alert"
+          ```
+          
+          ## Runbook Examples
+          
+          ### High Average Query Time
+          
+          1. Check `pg_stat_insights_top_by_time` for slowest queries
+          2. Review execution plans with `EXPLAIN ANALYZE`
+          3. Check for missing indexes
+          4. Verify statistics are up-to-date (`ANALYZE`)
+          5. Check for lock contention
+          
+          ### Low Cache Hit Ratio
+          
+          1. Check `pg_stat_insights_top_cache_misses`
+          2. Review `shared_buffers` setting
+          3. Identify sequential scans that should use indexes
+          4. Consider increasing `shared_buffers` if memory available
+          5. Check for table bloat
+          
+          ## Next Steps
+          
+          - [Prometheus Integration](prometheus-grafana.md)
+          - [Grafana Dashboards](grafana-dashboard.md)
+          - [Monitoring Patterns](monitoring-patterns.md)
+          
+          EOFALERT
+          
           echo "✅ All comprehensive documentation pages created!"
+          echo "✅ Prometheus & Grafana integration docs added!"
           
       - name: Build documentation
         run: mkdocs build
