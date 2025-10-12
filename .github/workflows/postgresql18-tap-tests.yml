@@ -17,6 +17,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential libreadline-dev zlib1g-dev flex bison libxml2-dev libxslt-dev libssl-dev libxml2-utils xsltproc
       
+      - name: Install Perl modules for TAP tests
+        run: |
+          sudo apt-get install -y libipc-run-perl
+      
       - name: Download PostgreSQL 18 source
         run: |
           cd /tmp
