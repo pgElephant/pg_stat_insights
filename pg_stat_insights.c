@@ -114,6 +114,7 @@ typedef enum pgssVersion
 	PGSS_V1_10,
 	PGSS_V1_11,
 	PGSS_V1_12,
+	PGSS_V1_14,
 } pgssVersion;
 
 typedef enum pgssStoreKind
@@ -451,6 +452,7 @@ PG_FUNCTION_INFO_V1(pg_stat_statements_1_9);
 PG_FUNCTION_INFO_V1(pg_stat_statements_1_10);
 PG_FUNCTION_INFO_V1(pg_stat_statements_1_11);
 PG_FUNCTION_INFO_V1(pg_stat_statements_1_12);
+PG_FUNCTION_INFO_V1(pg_stat_statements_1_14);
 PG_FUNCTION_INFO_V1(pg_stat_statements);
 PG_FUNCTION_INFO_V1(pg_stat_statements_info);
 
@@ -1761,7 +1763,8 @@ pg_stat_statements_reset(PG_FUNCTION_ARGS)
 #define PG_STAT_STATEMENTS_COLS_V1_10	43
 #define PG_STAT_STATEMENTS_COLS_V1_11	49
 #define PG_STAT_STATEMENTS_COLS_V1_12	52
-#define PG_STAT_STATEMENTS_COLS			52	/* maximum of above */
+#define PG_STAT_STATEMENTS_COLS_V1_14	67
+#define PG_STAT_STATEMENTS_COLS			67	/* maximum of above */
 
 /*
  * Retrieve statement statistics.
@@ -1773,6 +1776,16 @@ pg_stat_statements_reset(PG_FUNCTION_ARGS)
  * expected API version is identified by embedding it in the C name of the
  * function.  Unfortunately we weren't bright enough to do that for 1.1.
  */
+Datum
+pg_stat_statements_1_14(PG_FUNCTION_ARGS)
+{
+	bool		showtext = PG_GETARG_BOOL(0);
+
+	pg_stat_statements_internal(fcinfo, PGSS_V1_14, showtext);
+
+	return (Datum) 0;
+}
+
 Datum
 pg_stat_statements_1_12(PG_FUNCTION_ARGS)
 {
@@ -1927,12 +1940,16 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 			if (api_version != PGSS_V1_11)
 				elog(ERROR, "incorrect number of output arguments");
 			break;
-		case PG_STAT_STATEMENTS_COLS_V1_12:
-			if (api_version != PGSS_V1_12)
-				elog(ERROR, "incorrect number of output arguments");
-			break;
-		default:
+	case PG_STAT_STATEMENTS_COLS_V1_12:
+		if (api_version != PGSS_V1_12)
 			elog(ERROR, "incorrect number of output arguments");
+		break;
+	case PG_STAT_STATEMENTS_COLS_V1_14:
+		if (api_version != PGSS_V1_14)
+			elog(ERROR, "incorrect number of output arguments");
+		break;
+	default:
+		elog(ERROR, "incorrect number of output arguments");
 	}
 
 	/*
@@ -2183,22 +2200,44 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 			values[i++] = Int64GetDatumFast(tmp.parallel_workers_to_launch);
 			values[i++] = Int64GetDatumFast(tmp.parallel_workers_launched);
 		}
-		if (api_version >= PGSS_V1_11)
-		{
-			values[i++] = TimestampTzGetDatum(stats_since);
-			values[i++] = TimestampTzGetDatum(minmax_stats_since);
-		}
+	if (api_version >= PGSS_V1_11)
+	{
+		values[i++] = TimestampTzGetDatum(stats_since);
+		values[i++] = TimestampTzGetDatum(minmax_stats_since);
+	}
+	
+	if (api_version >= PGSS_V1_14)
+	{
+		values[i++] = Int32GetDatum(tmp.query_complexity);
+		values[i++] = Int32GetDatum(tmp.query_length);
+		values[i++] = Int32GetDatum(tmp.param_count);
+		values[i++] = Int32GetDatum(tmp.plan_type);
+		values[i++] = Float8GetDatumFast(tmp.plan_cost);
+		values[i++] = Int64GetDatumFast(tmp.plan_rows_estimated);
+		values[i++] = Int64GetDatumFast(tmp.plan_rows_actual);
+		values[i++] = Float8GetDatumFast((tmp.plan_rows_estimated > 0) ? 
+										  ((double)tmp.plan_rows_actual / tmp.plan_rows_estimated) : 0.0);
+		values[i++] = CStringGetTextDatum(tmp.wait_event);
+		values[i++] = Int32GetDatum(tmp.lock_count);
+		values[i++] = Int64GetDatumFast(tmp.temp_files);
+		values[i++] = Float8GetDatumFast((tmp.shared_blks_hit + tmp.shared_blks_read > 0) ?
+										  ((double)tmp.shared_blks_hit / (tmp.shared_blks_hit + tmp.shared_blks_read)) : 0.0);
+		values[i++] = Int32GetDatum(tmp.error_count);
+		values[i++] = CStringGetTextDatum(tmp.last_error);
+		nulls[i++] = true;
+	}
 
-		Assert(i == (api_version == PGSS_V1_0 ? PG_STAT_STATEMENTS_COLS_V1_0 :
-					 api_version == PGSS_V1_1 ? PG_STAT_STATEMENTS_COLS_V1_1 :
-					 api_version == PGSS_V1_2 ? PG_STAT_STATEMENTS_COLS_V1_2 :
-					 api_version == PGSS_V1_3 ? PG_STAT_STATEMENTS_COLS_V1_3 :
-					 api_version == PGSS_V1_8 ? PG_STAT_STATEMENTS_COLS_V1_8 :
-					 api_version == PGSS_V1_9 ? PG_STAT_STATEMENTS_COLS_V1_9 :
-					 api_version == PGSS_V1_10 ? PG_STAT_STATEMENTS_COLS_V1_10 :
-					 api_version == PGSS_V1_11 ? PG_STAT_STATEMENTS_COLS_V1_11 :
-					 api_version == PGSS_V1_12 ? PG_STAT_STATEMENTS_COLS_V1_12 :
-					 -1 /* fail if you forget to update this assert */ ));
+	Assert(i == (api_version == PGSS_V1_0 ? PG_STAT_STATEMENTS_COLS_V1_0 :
+				 api_version == PGSS_V1_1 ? PG_STAT_STATEMENTS_COLS_V1_1 :
+				 api_version == PGSS_V1_2 ? PG_STAT_STATEMENTS_COLS_V1_2 :
+				 api_version == PGSS_V1_3 ? PG_STAT_STATEMENTS_COLS_V1_3 :
+				 api_version == PGSS_V1_8 ? PG_STAT_STATEMENTS_COLS_V1_8 :
+				 api_version == PGSS_V1_9 ? PG_STAT_STATEMENTS_COLS_V1_9 :
+				 api_version == PGSS_V1_10 ? PG_STAT_STATEMENTS_COLS_V1_10 :
+				 api_version == PGSS_V1_11 ? PG_STAT_STATEMENTS_COLS_V1_11 :
+				 api_version == PGSS_V1_12 ? PG_STAT_STATEMENTS_COLS_V1_12 :
+				 api_version == PGSS_V1_14 ? PG_STAT_STATEMENTS_COLS_V1_14 :
+				 -1 /* fail if you forget to update this assert */ ));
 
 		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
 	}

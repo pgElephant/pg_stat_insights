@@ -23,6 +23,14 @@
 
 ---
 
+## Demo
+
+<div align="center">
+<img src="demo.svg" alt="pg_stat_insights Demo" width="800"/>
+</div>
+
+---
+
 ##  Overview
 
 `pg_stat_insights` is a production-ready PostgreSQL extension that provides **145+ comprehensive metrics** for query performance monitoring, analysis, and optimization. It combines the best features of `pg_stat_statements` and `pg_stat_monitor`, while adding **101 unique metrics** not found in either.
@@ -122,10 +130,12 @@ SELECT * FROM pg_stat_insights_top_by_time LIMIT 10;
 
 ### Complete Documentation
 
-- **[INSTALL.md](INSTALL.md)** - Detailed installation guide with all PostgreSQL versions
-- **[USAGE_EXAMPLES.md](USAGE_EXAMPLES.md)** - Complete query examples and use cases
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** - How to contribute to the project
-- **[pg_stat_insights.conf](pg_stat_insights.conf)** - All 17 configuration parameters explained
+- **[Installation Guide](INSTALL.md)** - Detailed setup for all PostgreSQL versions
+- **[Usage Examples](USAGE_EXAMPLES.md)** - 50+ query examples and use cases
+- **[Configuration Reference](configuration.md)** - All 17 parameters explained
+- **[Views Reference](views.md)** - All 11 pre-built views
+- **[Metrics Reference](metrics.md)** - All 145 metrics documented
+- **[Contributing Guide](CONTRIBUTING.md)** - How to contribute
 
 ### Configuration
 
@@ -150,7 +160,7 @@ pg_stat_insights.capture_parameters = off  # Keep OFF in production
 pg_stat_insights.capture_plan_text = off   # Keep OFF in production
 ```
 
-**See [pg_stat_insights.conf](pg_stat_insights.conf) for all 17 parameters with detailed explanations**
+**See [Configuration Reference](configuration.md) for all 17 parameters with detailed explanations**
 
 ---
 

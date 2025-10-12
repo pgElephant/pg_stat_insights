@@ -63,7 +63,7 @@ SELECT COUNT(*) FROM pg_stat_insights;
 
 ## Advanced Configuration
 
-See [pg_stat_insights.conf](pg_stat_insights.conf) for all parameters.
+See [Configuration Reference](configuration.md) for all parameters.
 
 ### Recommended Production Settings
 

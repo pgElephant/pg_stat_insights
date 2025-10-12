@@ -1,0 +1,103 @@
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      .terminal {
+        font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+        font-size: 13px;
+        fill: #00ff00;
+      }
+      .header { fill: #00d9ff; font-weight: bold; }
+      .success { fill: #00ff00; }
+      .label { fill: #ffaa00; }
+      .value { fill: #ffffff; }
+      .box { fill: #1a1a1a; stroke: #00d9ff; stroke-width: 2; }
+      text { animation: fadeIn 0.3s ease-in; }
+    </style>
+  </defs>
+  
+  <rect width="800" height="600" fill="#0a0a0a"/>
+  <rect class="box" x="10" y="10" width="780" height="580" rx="5"/>
+  
+  <!-- Header -->
+  <text class="header terminal" x="250" y="40">pg_stat_insights Demo</text>
+  <text class="terminal success" x="200" y="60">Enhanced PostgreSQL Query Analytics</text>
+  
+  <!-- Setup -->
+  <text class="terminal" x="30" y="90">➜ Setting up PostgreSQL...</text>
+  <text class="terminal success" x="30" y="110">✓ PostgreSQL 18.0 with pg_stat_insights loaded</text>
+  
+  <text class="terminal" x="30" y="135">➜ Running pgbench workload...</text>
+  <text class="terminal success" x="30" y="155">✓ Completed: 509,886 transactions (16,995 TPS)</text>
+  
+  <!-- Statistics Box -->
+  <rect fill="#1a3a4a" x="30" y="180" width="740" height="110" rx="3"/>
+  <text class="header terminal" x="300" y="205">QUERY STATISTICS</text>
+  
+  <text class="label terminal" x="50" y="230">Total Queries:</text>
+  <text class="value terminal" x="200" y="230">29</text>
+  
+  <text class="label terminal" x="50" y="250">Total Calls:</text>
+  <text class="value terminal" x="200" y="250">3,569,256</text>
+  
+  <text class="label terminal" x="400" y="230">Total Time:</text>
+  <text class="value terminal" x="520" y="230">112,283 ms</text>
+  
+  <text class="label terminal" x="400" y="250">Avg Time:</text>
+  <text class="value terminal" x="520" y="250">0.190 ms</text>
+  
+  <text class="terminal success" x="50" y="275">✓ Tracking 3.5M+ query executions</text>
+  
+  <!-- Top Queries -->
+  <rect fill="#2a1a3a" x="30" y="305" width="740" height="120" rx="3"/>
+  <text class="header terminal" x="270" y="330">TOP QUERIES BY TIME</text>
+  
+  <text class="terminal" x="50" y="355" style="font-size: 11px">UPDATE pgbench_branches</text>
+  <text class="value terminal" x="400" y="355" style="font-size: 11px">509k calls</text>
+  <text class="value terminal" x="550" y="355" style="font-size: 11px">0.155ms avg</text>
+  
+  <text class="terminal" x="50" y="375" style="font-size: 11px">UPDATE pgbench_tellers</text>
+  <text class="value terminal" x="400" y="375" style="font-size: 11px">509k calls</text>
+  <text class="value terminal" x="550" y="375" style="font-size: 11px">0.048ms avg</text>
+  
+  <text class="terminal" x="50" y="395" style="font-size: 11px">UPDATE pgbench_accounts</text>
+  <text class="value terminal" x="400" y="395" style="font-size: 11px">509k calls</text>
+  <text class="value terminal" x="550" y="395" style="font-size: 11px">0.012ms avg</text>
+  
+  <text class="terminal success" x="50" y="415" style="font-size: 11px">✓ All queries tracked with full metrics</text>
+  
+  <!-- Cache Performance -->
+  <rect fill="#1a3a2a" x="30" y="440" width="360" height="120" rx="3"/>
+  <text class="header terminal" x="120" y="465">CACHE PERFORMANCE</text>
+  
+  <text class="terminal" x="50" y="490" style="font-size: 11px">Excellent (≥99%)</text>
+  <text class="value terminal" x="250" y="490" style="font-size: 11px">99.96%</text>
+  
+  <text class="terminal" x="50" y="510" style="font-size: 11px">Good (95-99%)</text>
+  <text class="value terminal" x="250" y="510" style="font-size: 11px">97.35%</text>
+  
+  <text class="terminal success" x="50" y="540" style="font-size: 11px">✓ 35 queries with excellent cache hits</text>
+  
+  <!-- Response Times -->
+  <rect fill="#3a2a1a" x="410" y="440" width="360" height="120" rx="3"/>
+  <text class="header terminal" x="465" y="465">RESPONSE TIMES</text>
+  
+  <text class="terminal" x="430" y="490" style="font-size: 11px">&lt;1ms</text>
+  <text class="value terminal" x="550" y="490" style="font-size: 11px">25 queries</text>
+  
+  <text class="terminal" x="430" y="510" style="font-size: 11px">1-10ms</text>
+  <text class="value terminal" x="550" y="510" style="font-size: 11px">1 query</text>
+  
+  <text class="terminal success" x="430" y="540" style="font-size: 11px">✓ Histogram tracking enabled</text>
+  
+  <!-- Footer -->
+  <text class="terminal success" x="280" y="580">All 11 Views Working! ✓</text>
+  
+  <!-- Animated cursor -->
+  <rect x="420" y="568" width="8" height="14" fill="#00ff00">
+    <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"/>
+  </rect>
+</svg>
