@@ -1,17 +1,11 @@
-name: Run TAP Tests
+name: PostgreSQL 18 TAP Tests - pg_stat_insights
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
-    paths:
-      - 'pg_stat_insights.c'
-      - 'pg_stat_insights--1.0.sql'
-      - 't/**'
-      - 'Makefile'
 
 jobs:
   test:
+    name: Test on PostgreSQL 18.0
     runs-on: ubuntu-latest
     
     steps:
