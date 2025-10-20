@@ -10,10 +10,16 @@
 
 \echo Use "CREATE EXTENSION pg_stat_insights" to load this file. \quit
 
--- Reset function
+-- Reset all statistics
 CREATE FUNCTION pg_stat_insights_reset()
 RETURNS void
 AS 'MODULE_PATHNAME', 'pg_stat_statements_reset'
+LANGUAGE C PARALLEL SAFE;
+
+-- Reset specific query statistics
+CREATE FUNCTION pg_stat_insights_reset(IN userid oid, IN dbid oid, IN queryid bigint)
+RETURNS void
+AS 'MODULE_PATHNAME', 'pg_stat_statements_reset_1_7'
 LANGUAGE C PARALLEL SAFE;
 
 -- Main statistics function (matches pg_stat_statements v1.12 output)

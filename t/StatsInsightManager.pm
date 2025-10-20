@@ -23,6 +23,12 @@ our @EXPORT = qw(
     print_test_summary
     get_test_summary
     restart_postgres
+    execute_query
+    execute_query_allow_error
+    get_scalar
+    get_port
+    test_pass
+    test_cmp
     $TEST_PORT
     $TEST_PGDATA
     $PG_BIN
@@ -216,6 +222,79 @@ sub print_test_summary {
     }
     
     return $summary->{success};
+}
+
+# Execute SQL query
+sub execute_query {
+    my ($port, $sql) = @_;
+    my $result = run_query($port, $sql);
+    return $result;
+}
+
+# Execute query that may fail
+sub execute_query_allow_error {
+    my ($port, $sql) = @_;
+    my $result = `psql -p $port -t -A -c "$sql" postgres 2>/dev/null`;
+    return $result;
+}
+
+# Get scalar value from query
+sub get_scalar {
+    my ($port, $sql) = @_;
+    my $result = run_query($port, $sql);
+    $result =~ s/^\s+|\s+$//g if defined $result;
+    return $result // '';
+}
+
+# Get port
+sub get_port {
+    return $TEST_PORT;
+}
+
+# Test pass helper
+sub test_pass {
+    my ($message) = @_;
+    $TOTAL_TESTS++;
+    $TESTS_PASSED++;
+    print "ok $TOTAL_TESTS - $message\n";
+    return 1;
+}
+
+# Test comparison helper
+sub test_cmp {
+    my ($got, $op, $expected, $message) = @_;
+    $TOTAL_TESTS++;
+    
+    my $result = 0;
+    if ($op eq '==') {
+        $result = ($got == $expected);
+    } elsif ($op eq '!=') {
+        $result = ($got != $expected);
+    } elsif ($op eq '>') {
+        $result = ($got > $expected);
+    } elsif ($op eq '>=') {
+        $result = ($got >= $expected);
+    } elsif ($op eq '<') {
+        $result = ($got < $expected);
+    } elsif ($op eq '<=') {
+        $result = ($got <= $expected);
+    } elsif ($op eq 'eq') {
+        $result = ($got eq $expected);
+    } elsif ($op eq 'ne') {
+        $result = ($got ne $expected);
+    }
+    
+    if ($result) {
+        $TESTS_PASSED++;
+        print "ok $TOTAL_TESTS - $message\n";
+    } else {
+        $TESTS_FAILED++;
+        print "not ok $TOTAL_TESTS - $message\n";
+        print "#   got: '$got'\n";
+        print "#   expected ($op): '$expected'\n";
+    }
+    
+    return $result;
 }
 
 1;
