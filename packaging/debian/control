@@ -1,14 +1,14 @@
-Source: pg-stat-insights-postgresql-@PG_VERSION@
+Source: pg-stat-insights
 Section: database
 Priority: optional
 Maintainer: pgElephant Team <team@pgelephant.org>
-Build-Depends: debhelper (>= 9), postgresql-server-dev-@PG_VERSION@
+Build-Depends: debhelper (>= 9), postgresql-server-dev-all | postgresql-server-dev-13 | postgresql-server-dev-14 | postgresql-server-dev-15 | postgresql-server-dev-16 | postgresql-server-dev-17 | postgresql-server-dev-18
 Standards-Version: 3.9.8
 Homepage: https://github.com/pgelephant/pg_stat_insights
 
-Package: postgresql-@PG_VERSION@-pg-stat-insights
+Package: pg-stat-insights
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, postgresql-@PG_VERSION@
+Depends: ${shlibs:Depends}, ${misc:Depends}, postgresql-server-dev-all | postgresql-13 | postgresql-14 | postgresql-15 | postgresql-16 | postgresql-17 | postgresql-18
 Description: Advanced PostgreSQL query performance monitoring extension
  pg_stat_insights is an advanced PostgreSQL extension for database performance
  monitoring, query optimization, and SQL analytics. It tracks 52 comprehensive

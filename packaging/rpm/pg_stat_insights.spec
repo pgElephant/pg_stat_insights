@@ -37,11 +37,13 @@ Features:
 
 %build
 export PG_CONFIG=%{pginstdir}/bin/pg_config
-make %{?_smp_mflags}
+export PATH=%{pginstdir}/bin:$PATH
+make USE_PGXS=1 %{?_smp_mflags}
 
 %install
 export PG_CONFIG=%{pginstdir}/bin/pg_config
-make install DESTDIR=%{buildroot}
+export PATH=%{pginstdir}/bin:$PATH
+make install USE_PGXS=1 DESTDIR=%{buildroot}
 
 %files
 %license LICENSE

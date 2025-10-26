@@ -42,14 +42,26 @@ jobs:
               apt-get install -y postgresql-server-dev-${{ inputs.pg_version }}
               
               # Prepare build directory
-              BUILD_DIR=/tmp/pg_stat_insights-postgresql-${{ inputs.pg_version }}-${{ inputs.package_version }}
+              BUILD_DIR=/tmp/pg_stat_insights-${{ inputs.package_version }}
               mkdir -p $BUILD_DIR
-              cp -r *.c *.sql *.control Makefile LICENSE README.md $BUILD_DIR/
+              # Copy all source files
+              cp *.c $BUILD_DIR/ 2>/dev/null || true
+              cp *.sql $BUILD_DIR/ 2>/dev/null || true
+              cp *.control $BUILD_DIR/ 2>/dev/null || true
+              cp *.conf $BUILD_DIR/ 2>/dev/null || true
+              cp Makefile $BUILD_DIR/ 2>/dev/null || true
+              cp meson.build $BUILD_DIR/ 2>/dev/null || true
+              cp LICENSE README.md INSTALL.md CHANGELOG.md CONTRIBUTING.md SECURITY.md $BUILD_DIR/ 2>/dev/null || true
+              cp -r sql expected $BUILD_DIR/ 2>/dev/null || true
               cp -r packaging/debian $BUILD_DIR/
               
-              # Update version in control file
+              # Update package name for PostgreSQL version
               cd $BUILD_DIR
-              sed -i "s/@PG_VERSION@/${{ inputs.pg_version }}/g" debian/control
+              sed -i "s/pg-stat-insights/postgresql-${{ inputs.pg_version }}-pg-stat-insights/g" debian/changelog debian/control
+              
+              # Set PostgreSQL version for build dependencies
+              sed -i "s/postgresql-server-dev-all/postgresql-server-dev-${{ inputs.pg_version }}/g" debian/control
+              sed -i "s/postgresql-13 | postgresql-14.*postgresql-18/postgresql-${{ inputs.pg_version }}/g" debian/control
               
               # Build package
               dpkg-buildpackage -us -uc -b

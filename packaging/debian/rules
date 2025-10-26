@@ -2,6 +2,19 @@
 
 export DH_VERBOSE=1
 
+# Detect PostgreSQL version from package name
+PG_VERSION := $(shell dpkg-parsechangelog | grep '^Source:' | sed 's/.*postgresql-\([0-9]*\)-.*/\1/')
+
+# If version not in package name, try to detect from available pg_config
+ifeq ($(PG_VERSION),)
+PG_VERSION := $(shell pg_config --version 2>/dev/null | sed 's/.* \([0-9]*\)\..*/\1/')
+endif
+
+# Set PG_CONFIG if PostgreSQL version detected
+ifneq ($(PG_VERSION),)
+export PG_CONFIG := /usr/lib/postgresql/$(PG_VERSION)/bin/pg_config
+endif
+
 %:
 	dh $@
 

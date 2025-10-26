@@ -22,7 +22,15 @@ jobs:
       - name: Create source tarball
         run: |
           mkdir -p pg_stat_insights-${{ inputs.package_version }}
-          cp -r *.c *.sql *.control Makefile LICENSE README.md pg_stat_insights-${{ inputs.package_version }}/
+          # Copy all source files
+          cp *.c pg_stat_insights-${{ inputs.package_version }}/ 2>/dev/null || true
+          cp *.sql pg_stat_insights-${{ inputs.package_version }}/ 2>/dev/null || true
+          cp *.control pg_stat_insights-${{ inputs.package_version }}/ 2>/dev/null || true
+          cp *.conf pg_stat_insights-${{ inputs.package_version }}/ 2>/dev/null || true
+          cp Makefile pg_stat_insights-${{ inputs.package_version }}/ 2>/dev/null || true
+          cp meson.build pg_stat_insights-${{ inputs.package_version }}/ 2>/dev/null || true
+          cp LICENSE README.md INSTALL.md CHANGELOG.md CONTRIBUTING.md SECURITY.md pg_stat_insights-${{ inputs.package_version }}/ 2>/dev/null || true
+          cp -r sql expected pg_stat_insights-${{ inputs.package_version }}/ 2>/dev/null || true
           tar czf pg_stat_insights-${{ inputs.package_version }}.tar.gz pg_stat_insights-${{ inputs.package_version }}
           mkdir -p ~/rpmbuild/SOURCES
           mv pg_stat_insights-${{ inputs.package_version }}.tar.gz ~/rpmbuild/SOURCES/
