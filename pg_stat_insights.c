@@ -1,43 +1,13 @@
 /*-------------------------------------------------------------------------
  *
- * pg_stat_statements.c
- *		Track statement planning and execution times as well as resource
- *		usage across a whole database cluster.
- *
- * Execution costs are totaled for each distinct source query, and kept in
- * a shared hashtable.  (We track only as many distinct queries as will fit
- * in the designated amount of shared memory.)
- *
- * Starting in Postgres 9.2, this module normalized query entries.  As of
- * Postgres 14, the normalization is done by the core if compute_query_id is
- * enabled, or optionally by third-party modules.
- *
- * To facilitate presenting entries to users, we create "representative" query
- * strings in which constants are replaced with parameter symbols ($n), to
- * make it clearer what a normalized entry can represent.  To save on shared
- * memory, and to avoid having to truncate oversized query strings, we store
- * these strings in a temporary external query-texts file.  Offsets into this
- * file are kept in shared memory.
- *
- * Note about locking issues: to create or delete an entry in the shared
- * hashtable, one must hold pgss->lock exclusively.  Modifying any field
- * in an entry except the counters requires the same.  To look up an entry,
- * one must hold the lock shared.  To read or update the counters within
- * an entry, one must hold the lock shared or exclusive (so the entry doesn't
- * disappear!) and also take the entry's mutex spinlock.
- * The shared state variable pgss->extent (the next free spot in the external
- * query-text file) should be accessed only while holding either the
- * pgss->mutex spinlock, or exclusive lock on pgss->lock.  We use the mutex to
- * allow reserving file space while holding only shared lock on pgss->lock.
- * Rewriting the entire external query-text file, eg for garbage collection,
- * requires holding pgss->lock exclusively; this allows individual entries
- * in the file to be read or written while holding only shared lock.
- *
- *
+ * pg_stat_insights.c
+ *      Enhanced execution statistics of SQL statements
+ * 
+ * Copyright (c) 2024-2025, pgElephant, Inc.
  * Copyright (c) 2008-2025, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  contrib/pg_stat_statements/pg_stat_statements.c
+ *	  contrib/pg_stat_insights/pg_stat_insights.c
  *
  *-------------------------------------------------------------------------
  */
@@ -72,12 +42,12 @@
 #include "utils/timestamp.h"
 
 PG_MODULE_MAGIC_EXT(
-					.name = "pg_stat_statements",
+					.name = "pg_stat_insights",
 					.version = PG_VERSION
 );
 
 /* Location of permanent stats file (valid when database is shut down) */
-#define PGSS_DUMP_FILE	PGSTAT_STAT_PERMANENT_DIRECTORY "/pg_stat_statements.stat"
+#define PGSS_DUMP_FILE	PGSTAT_STAT_PERMANENT_DIRECTORY "/pg_stat_insights.stat"
 
 /*
  * Location of external query text file.
@@ -103,18 +73,8 @@ static const uint32 PGSS_PG_MAJOR_VERSION = PG_VERSION_NUM / 100;
 /*
  * Extension version number, for supporting older extension versions' objects
  */
-typedef enum pgssVersion
-{
-	PGSS_V1_0 = 0,
-	PGSS_V1_1,
-	PGSS_V1_2,
-	PGSS_V1_3,
-	PGSS_V1_8,
-	PGSS_V1_9,
-	PGSS_V1_10,
-	PGSS_V1_11,
-	PGSS_V1_12,
-	PGSS_V1_14,
+typedef enum pgssVersion {
+	PGSS_V1_14 = 14
 } pgssVersion;
 
 typedef enum pgssStoreKind
@@ -124,7 +84,7 @@ typedef enum pgssStoreKind
 	/*
 	 * PGSS_PLAN and PGSS_EXEC must be respectively 0 and 1 as they're used to
 	 * reference the underlying values in the arrays in the Counters struct,
-	 * and this order is required in pg_stat_statements_internal().
+	 * and this order is required in pg_stat_insights_internal().
 	 */
 	PGSS_PLAN = 0,
 	PGSS_EXEC,
@@ -154,6 +114,74 @@ typedef struct pgssHashKey
  */
 typedef struct Counters
 {
+	/* ...existing fields... */
+	int32 resp_calls_histogram[10]; /* Histogram buckets for response times */
+	int32 error_elevel;              /* Error level (elevel) */
+	int32 error_sqlcode;             /* SQL error code */
+	char error_message[128];         /* Error message */
+	char comments[256];              /* Query comments, if available */
+	char        client_ip[64];        /* client IP address */
+	char        relations[256];       /* comma-separated list of tables involved */
+	int32       cmd_type;             /* query type: 1=SELECT, 2=UPDATE, 3=INSERT, 4=DELETE, 0=other */
+	char        cmd_type_text[16];    /* query type as text */
+		/* Query type (cmd_type/cmd_type_text) */
+		if (queryDesc && queryDesc->plannedstmt)
+		{
+			CmdType type = queryDesc->plannedstmt->commandType;
+			switch (type)
+			{
+				case CMD_SELECT:
+					entry->counters.cmd_type = 1;
+					strncpy(entry->counters.cmd_type_text, "SELECT", sizeof(entry->counters.cmd_type_text)-1);
+					break;
+				case CMD_UPDATE:
+					entry->counters.cmd_type = 2;
+					strncpy(entry->counters.cmd_type_text, "UPDATE", sizeof(entry->counters.cmd_type_text)-1);
+					break;
+				case CMD_INSERT:
+					entry->counters.cmd_type = 3;
+					strncpy(entry->counters.cmd_type_text, "INSERT", sizeof(entry->counters.cmd_type_text)-1);
+					break;
+				case CMD_DELETE:
+					entry->counters.cmd_type = 4;
+					strncpy(entry->counters.cmd_type_text, "DELETE", sizeof(entry->counters.cmd_type_text)-1);
+					break;
+				default:
+					entry->counters.cmd_type = 0;
+					strncpy(entry->counters.cmd_type_text, "OTHER", sizeof(entry->counters.cmd_type_text)-1);
+					break;
+			}
+			entry->counters.cmd_type_text[sizeof(entry->counters.cmd_type_text)-1] = '\0';
+		}
+		else
+		{
+			entry->counters.cmd_type = 0;
+			entry->counters.cmd_type_text[0] = '\0';
+		}
+		/* Relations (tables involved) */
+		if (queryDesc && queryDesc->plannedstmt && queryDesc->plannedstmt->relationOids)
+		{
+			List *relids = queryDesc->plannedstmt->relationOids;
+			char relbuf[256] = "";
+			ListCell *lc;
+			foreach(lc, relids)
+			{
+				Oid relid = lfirst_oid(lc);
+				const char *relname = get_rel_name(relid);
+				if (relname)
+				{
+					if (relbuf[0] != '\0')
+						strncat(relbuf, ",", sizeof(relbuf)-strlen(relbuf)-1);
+					strncat(relbuf, relname, sizeof(relbuf)-strlen(relbuf)-1);
+				}
+			}
+			strncpy(entry->counters.relations, relbuf, sizeof(entry->counters.relations)-1);
+			entry->counters.relations[sizeof(entry->counters.relations)-1] = '\0';
+		}
+		else
+		{
+			entry->counters.relations[0] = '\0';
+		}
 	int64		calls[PGSS_NUMKIND];	/* # of times planned/executed */
 	double		total_time[PGSS_NUMKIND];	/* total planning/execution time,
 											 * in msec */
@@ -211,130 +239,31 @@ typedef struct Counters
 											 * to be launched */
 	int64		parallel_workers_launched;	/* # of parallel workers actually
 											 * launched */
-	
-	/* Query analysis */
-	int32		query_complexity;
+	int32		query_complexity;	/* query complexity score */
 	int32		query_length;		/* length of the query string */
 	int32		param_count;		/* number of parameters in the query */
-	int32		plan_type;			/* type of execution plan (seq/index/bitmap) */
-	double		plan_cost;			/* estimated plan cost */
-	int64		plan_rows_estimated; /* estimated rows from plan */
-	int64		plan_rows_actual;	/* actual rows processed */
-	char		wait_event[64];		/* last wait event */
-	int32		lock_count;			/* number of locks acquired */
-	int64		temp_files;			/* number of temp files used */
-	double		cache_hit_rate;		/* calculated cache hit rate */
-	int32		error_count;		/* number of errors */
-	char		last_error[128];	/* last error message */
-	double		exec_time_p50;		/* execution time 50th percentile */
-	double		exec_time_p95;		/* execution time 95th percentile */
-	double		exec_time_p99;		/* execution time 99th percentile */
-	int64		memory_usage;		/* memory usage in bytes */
-	char		application_name[64]; /* source application name */
-	int32		backend_pid;		/* backend process id */
-	int64		transaction_id;		/* transaction id */
-	int32		retry_count;		/* number of statement retries */
-	char		client_ip[64];		/* client IP address */
-	char		relations[256];
-	int32		cmd_type;
-	char		cmd_type_text[16];
-	
-	/* Bucket tracking */
-	int64		bucket_id;			/* time bucket identifier */
-	TimestampTz	bucket_start_time;	/* bucket start timestamp */
-	TimestampTz	first_seen;			/* timestamp when query was first seen */
-	TimestampTz	last_seen;			/* timestamp when query was last executed */
-	int32		bucket_calls;		/* calls in current bucket */
-	double		bucket_total_time;	/* total time in current bucket */
-	
-	/* Response time histogram (10 buckets) */
-	int64		resp_time_histogram[10]; /* response time histogram buckets:
-										  * [0]=<1ms, [1]=1-10ms, [2]=10-100ms,
-										  * [3]=100ms-1s, [4]=1-10s, [5]=10-60s,
-										  * [6]=1-5min, [7]=5-10min, [8]=10-30min, [9]=>30min */
-	
-	/* Buffer I/O histogram (distribution of buffer reads) */
-	int64		io_histogram[5];	/* I/O intensity histogram:
-									 * [0]=0 blocks, [1]=1-10, [2]=11-100,
-									 * [3]=101-1000, [4]=>1000 */
-	
-	/* Row count histogram (distribution of rows returned) */
-	int64		rows_histogram[5];	/* Rows returned histogram:
-									 * [0]=0 rows, [1]=1-10, [2]=11-100,
-									 * [3]=101-1000, [4]=>1000 */
-	
-	/* Query plan analysis */
-	char		query_plan[8192];	/* full query plan text (EXPLAIN output) */
-	int32		plan_node_count;	/* number of nodes in plan tree */
-	int32		plan_max_depth;		/* maximum depth of plan tree */
-	bool		uses_index;			/* whether query uses index scan */
-	bool		uses_seq_scan;		/* whether query uses sequential scan */
-	bool		uses_bitmap_scan;	/* whether query uses bitmap scan */
-	bool		uses_hash_join;		/* whether query uses hash join */
-	bool		uses_merge_join;	/* whether query uses merge join */
-	bool		uses_nested_loop;	/* whether query uses nested loop */
-	int32		index_scans;		/* number of index scans in plan */
-	int32		seq_scans;			/* number of sequential scans in plan */
-	
-	/* Parameter tracking */
-	char		query_params[1024];	/* actual parameter values (if enabled) */
-	int32		distinct_param_values; /* count of unique parameter combinations */
-	
-	/* Query classification & metadata */
-	char		sql_comments[512];	/* extracted SQL comments */
-	char		query_fingerprint[64]; /* MD5 hash of query structure */
-	int32		query_nesting_level; /* nesting depth when executed */
-	bool		is_ddl;				/* is DDL statement */
-	bool		is_dml;				/* is DML statement */
-	bool		is_select;			/* is SELECT statement */
-	bool		is_utility;			/* is utility command */
-	
-	/* State & lifecycle tracking */
-	int32		state_changes;		/* number of state transitions */
-	int64		vacuum_count;		/* times query triggered vacuum */
-	int64		analyze_count;		/* times query triggered analyze */
-	
-	/* Network & latency */
-	double		network_latency_avg; /* average network round-trip time */
-	double		network_latency_max; /* maximum network latency */
-	int64		network_bytes_sent;	/* bytes sent to client */
-	int64		network_bytes_received; /* bytes received from client */
-	
-	/* Cache & memory details */
-	int64		shared_mem_bytes;	/* shared memory used */
-	int64		local_mem_bytes;	/* local memory used */
-	int64		temp_mem_bytes;		/* temporary memory used */
-	double		cache_eviction_rate; /* rate of cache evictions */
-	
-	/* Statement lifecycle */
-	int64		total_prepare_count; /* prepared statement executions */
-	int64		total_bind_count;	/* bind operations */
-	int64		total_execute_count; /* execute operations */
-	double		parse_time_total;	/* total parse time */
-	double		rewrite_time_total;	/* total rewrite time */
-	
-	/* Table access patterns */
-	int64		heap_blks_hit;		/* heap blocks hit in buffer */
-	int64		heap_blks_read;		/* heap blocks read from disk */
-	int64		index_blks_hit;		/* index blocks hit in buffer */
-	int64		index_blks_read;	/* index blocks read from disk */
-	int64		toast_blks_hit;		/* TOAST blocks hit */
-	int64		toast_blks_read;	/* TOAST blocks read */
-	
-	/* Checkpoint & WAL detail */
-	int64		checkpoint_sync_count; /* checkpoints during execution */
-	int64		wal_sync_count;		/* WAL syncs performed */
-	double		wal_write_time;		/* time writing WAL */
-	
-	/* Connection & session context */
-	char		database_name[64];	/* database name */
-	char		user_name[64];		/* user name (text) */
-	char		host_name[256];		/* client hostname (if resolved) */
-	int32		connection_type;	/* 1=local, 2=tcp, 3=ssl */
+	int32       plan_type;              /* type of execution plan */
+	double      plan_cost;              /* estimated plan cost */
+	int64       plan_rows_estimated;    /* estimated rows from plan */
+	int64       plan_rows_actual;       /* actual rows processed */
+	char        wait_event[64];         /* last wait event */
+	int32       lock_count;             /* number of locks acquired */
+	int64       temp_files;             /* number of temp files used */
+	double      cache_hit_rate;         /* cache hit rate */
+	int32       error_count;            /* number of errors */
+	char        last_error[128];        /* last error message */
+	double      exec_time_p50;          /* execution time p50 */
+	double      exec_time_p95;          /* execution time p95 */
+	double      exec_time_p99;          /* execution time p99 */
+	int64       memory_usage;           /* memory usage in bytes */
+	char        application_name[64];   /* source application name */
+	int32       backend_pid;            /* backend process id */
+	int64       transaction_id;         /* transaction id */
+	int32       retry_count;            /* number of statement retries */
 } Counters;
 
 /*
- * Global statistics for pg_stat_statements
+ * Global statistics for pg_stat_insights
  */
 typedef struct pgssGlobalStats
 {
@@ -349,84 +278,16 @@ typedef struct pgssGlobalStats
  * we reset query_offset to zero and query_len to -1.  This will be seen as
  * an invalid state by qtext_fetch().
  */
-typedef struct pgssEntry
+Datum
+pg_stat_insights(PG_FUNCTION_ARGS)
 {
-	pgssHashKey key;			/* hash key of entry - MUST BE FIRST */
-	Counters	counters;		/* the statistics for this query */
-	Size		query_offset;	/* query text offset in external file */
-	int			query_len;		/* # of valid bytes in query string, or -1 */
-	int			encoding;		/* query text encoding */
-	TimestampTz stats_since;	/* timestamp of entry allocation */
-	TimestampTz minmax_stats_since; /* timestamp of last min/max values reset */
-	slock_t		mutex;			/* protects the counters only */
-} pgssEntry;
-
-/*
- * Global shared state
- */
-typedef struct pgssSharedState
-{
-	LWLock	   *lock;			/* protects hashtable search/modification */
-	double		cur_median_usage;	/* current median usage in hashtable */
-	Size		mean_query_len; /* current mean entry text length */
-	slock_t		mutex;			/* protects following fields only: */
-	Size		extent;			/* current extent of query file */
-	int			n_writers;		/* number of active writers to query file */
-	int			gc_count;		/* query file garbage collection cycle count */
-	pgssGlobalStats stats;		/* global statistics for pgss */
-} pgssSharedState;
-
-/*---- Local variables ----*/
-
-/* Current nesting depth of planner/ExecutorRun/ProcessUtility calls */
-static int	nesting_level = 0;
-
-/* Saved hook values */
-static shmem_request_hook_type prev_shmem_request_hook = NULL;
-static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
-static post_parse_analyze_hook_type prev_post_parse_analyze_hook = NULL;
-static planner_hook_type prev_planner_hook = NULL;
-static ExecutorStart_hook_type prev_ExecutorStart = NULL;
-static ExecutorRun_hook_type prev_ExecutorRun = NULL;
-static ExecutorFinish_hook_type prev_ExecutorFinish = NULL;
-static ExecutorEnd_hook_type prev_ExecutorEnd = NULL;
-static ProcessUtility_hook_type prev_ProcessUtility = NULL;
-
-/* Links to shared memory state */
-static pgssSharedState *pgss = NULL;
-static HTAB *pgss_hash = NULL;
-
-/*---- GUC variables ----*/
-
-typedef enum
-{
-	PGSS_TRACK_NONE,			/* track no statements */
-	PGSS_TRACK_TOP,				/* only top level statements */
-	PGSS_TRACK_ALL,				/* all statements, including nested ones */
-}			PGSSTrackLevel;
-
-static const struct config_enum_entry track_options[] =
-{
-	{"none", PGSS_TRACK_NONE, false},
-	{"top", PGSS_TRACK_TOP, false},
-	{"all", PGSS_TRACK_ALL, false},
-	{NULL, 0, false}
-};
-
-static int	pgss_max = 5000;	/* max # statements to track */
-static int	pgss_track = PGSS_TRACK_TOP;	/* tracking level */
-static bool pgss_track_utility = true;	/* whether to track utility commands */
+	bool showtext = PG_GETARG_BOOL(0);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_14, showtext);
+	return (Datum) 0;
+}
 static bool pgss_track_planning = false;	/* whether to track planning
 											 * duration */
 static bool pgss_save = true;	/* whether to save stats across shutdown */
-
-/* pg_stat_insights configuration */
-static bool pgss_track_histograms = true;
-static bool pgss_capture_parameters = false; /* capture actual query parameters */
-static bool pgss_capture_plan_text = false; /* capture full EXPLAIN plan text */
-static bool pgss_capture_comments = true;	/* extract and store SQL comments */
-static int	pgss_bucket_time = 60;			/* bucket interval in seconds (0=disabled) */
-static int	pgss_max_buckets = 10;			/* maximum number of buckets to keep */
 
 #define pgss_enabled(level) \
 	(!IsParallelWorker() && \
@@ -442,19 +303,19 @@ static int	pgss_max_buckets = 10;			/* maximum number of buckets to keep */
 
 /*---- Function declarations ----*/
 
-PG_FUNCTION_INFO_V1(pg_stat_statements_reset);
-PG_FUNCTION_INFO_V1(pg_stat_statements_reset_1_7);
-PG_FUNCTION_INFO_V1(pg_stat_statements_reset_1_11);
-PG_FUNCTION_INFO_V1(pg_stat_statements_1_2);
-PG_FUNCTION_INFO_V1(pg_stat_statements_1_3);
-PG_FUNCTION_INFO_V1(pg_stat_statements_1_8);
-PG_FUNCTION_INFO_V1(pg_stat_statements_1_9);
-PG_FUNCTION_INFO_V1(pg_stat_statements_1_10);
-PG_FUNCTION_INFO_V1(pg_stat_statements_1_11);
-PG_FUNCTION_INFO_V1(pg_stat_statements_1_12);
-PG_FUNCTION_INFO_V1(pg_stat_statements_1_14);
-PG_FUNCTION_INFO_V1(pg_stat_statements);
-PG_FUNCTION_INFO_V1(pg_stat_statements_info);
+PG_FUNCTION_INFO_V1(pg_stat_insights_reset);
+PG_FUNCTION_INFO_V1(pg_stat_insights_reset_1_7);
+PG_FUNCTION_INFO_V1(pg_stat_insights_reset_1_11);
+PG_FUNCTION_INFO_V1(pg_stat_insights_1_2);
+PG_FUNCTION_INFO_V1(pg_stat_insights_1_3);
+PG_FUNCTION_INFO_V1(pg_stat_insights_1_8);
+PG_FUNCTION_INFO_V1(pg_stat_insights_1_9);
+PG_FUNCTION_INFO_V1(pg_stat_insights_1_10);
+PG_FUNCTION_INFO_V1(pg_stat_insights_1_11);
+PG_FUNCTION_INFO_V1(pg_stat_insights_1_12);
+PG_FUNCTION_INFO_V1(pg_stat_insights);
+PG_FUNCTION_INFO_V1(pg_stat_insights_info);
+PG_FUNCTION_INFO_V1(pg_stat_insights_replication_stats);
 
 static void pgss_shmem_request(void);
 static void pgss_shmem_startup(void);
@@ -486,7 +347,10 @@ static void pgss_store(const char *query, int64 queryId,
 					   JumbleState *jstate,
 					   int parallel_workers_to_launch,
 					   int parallel_workers_launched);
-static void pg_stat_statements_internal(FunctionCallInfo fcinfo,
+static void pg_stat_insights_internal(FunctionCallInfo fcinfo,
+	values[i++] = Int32GetDatum(tmp.cmd_type);
+	values[i++] = CStringGetTextDatum(tmp.cmd_type_text);
+	values[i++] = CStringGetTextDatum(tmp.relations);
 										pgssVersion api_version,
 										bool showtext);
 static Size pgss_memsize(void);
@@ -518,7 +382,7 @@ _PG_init(void)
 	 * In order to create our shared memory area, we have to be loaded via
 	 * shared_preload_libraries.  If not, fall out without hooking into any of
 	 * the main system.  (We don't throw error here because it seems useful to
-	 * allow the pg_stat_statements functions to be created even when the
+	 * allow the pg_stat_insights functions to be created even when the
 	 * module isn't active.  The functions must protect themselves against
 	 * being called then, however.)
 	 */
@@ -592,78 +456,7 @@ _PG_init(void)
 							 NULL,
 							 NULL);
 
-	/* pg_stat_insights configuration */
-	DefineCustomBoolVariable("pg_stat_insights.track_histograms",
-							 "Track response time histogram distribution.",
-							 NULL,
-							 &pgss_track_histograms,
-							 true,
-							 PGC_SUSET,
-							 0,
-							 NULL,
-							 NULL,
-							 NULL);
-
-	DefineCustomBoolVariable("pg_stat_insights.capture_parameters",
-							 "Capture actual query parameter values (may expose sensitive data).",
-							 NULL,
-							 &pgss_capture_parameters,
-							 false,
-							 PGC_SUSET,
-							 0,
-							 NULL,
-							 NULL,
-							 NULL);
-
-	DefineCustomBoolVariable("pg_stat_insights.capture_plan_text",
-							 "Capture full EXPLAIN plan text (high storage cost).",
-							 NULL,
-							 &pgss_capture_plan_text,
-							 false,
-							 PGC_SUSET,
-							 0,
-							 NULL,
-							 NULL,
-							 NULL);
-
-	DefineCustomBoolVariable("pg_stat_insights.capture_comments",
-							 "Extract and store SQL comments from queries.",
-							 NULL,
-							 &pgss_capture_comments,
-							 true,
-							 PGC_SUSET,
-							 0,
-							 NULL,
-							 NULL,
-							 NULL);
-
-	DefineCustomIntVariable("pg_stat_insights.bucket_time",
-							"Time interval for bucket tracking in seconds (0 = disabled).",
-							NULL,
-							&pgss_bucket_time,
-							60,
-							0,
-							3600,
-							PGC_SUSET,
-							GUC_UNIT_S,
-							NULL,
-							NULL,
-							NULL);
-
-	DefineCustomIntVariable("pg_stat_insights.max_buckets",
-							"Maximum number of time buckets to retain.",
-							NULL,
-							&pgss_max_buckets,
-							10,
-							1,
-							100,
-							PGC_SUSET,
-							0,
-							NULL,
-							NULL,
-							NULL);
-
-	MarkGUCPrefixReserved("pg_stat_statements");
+	MarkGUCPrefixReserved("pg_stat_insights");
 
 	/*
 	 * Install hooks.
@@ -699,7 +492,7 @@ pgss_shmem_request(void)
 		prev_shmem_request_hook();
 
 	RequestAddinShmemSpace(pgss_memsize());
-	RequestNamedLWLockTranche("pg_stat_statements", 1);
+	RequestNamedLWLockTranche("pg_stat_insights", 1);
 }
 
 /*
@@ -734,14 +527,14 @@ pgss_shmem_startup(void)
 	 */
 	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
 
-	pgss = ShmemInitStruct("pg_stat_statements",
+	pgss = ShmemInitStruct("pg_stat_insights",
 						   sizeof(pgssSharedState),
 						   &found);
 
 	if (!found)
 	{
 		/* First time through ... */
-		pgss->lock = &(GetNamedLWLockTranche("pg_stat_statements"))->lock;
+		pgss->lock = &(GetNamedLWLockTranche("pg_stat_insights"))->lock;
 		pgss->cur_median_usage = ASSUMED_MEDIAN_INIT;
 		pgss->mean_query_len = ASSUMED_LENGTH_INIT;
 		SpinLockInit(&pgss->mutex);
@@ -754,7 +547,7 @@ pgss_shmem_startup(void)
 
 	info.keysize = sizeof(pgssHashKey);
 	info.entrysize = sizeof(pgssEntry);
-	pgss_hash = ShmemInitHash("pg_stat_statements hash",
+	pgss_hash = ShmemInitHash("pg_stat_insights hash",
 							  pgss_max, pgss_max,
 							  &info,
 							  HASH_ELEM | HASH_BLOBS);
@@ -870,7 +663,7 @@ pgss_shmem_startup(void)
 		entry->minmax_stats_since = temp.minmax_stats_since;
 	}
 
-	/* Read global statistics for pg_stat_statements */
+	/* Read global statistics for pg_stat_insights */
 	if (fread(&pgss->stats, sizeof(pgssGlobalStats), 1, file) != 1)
 		goto read_error;
 
@@ -924,7 +717,7 @@ fail:
 
 	/*
 	 * Don't unlink PGSS_TEXT_FILE here; it should always be around while the
-	 * server is running with pg_stat_statements enabled
+	 * server is running with pg_stat_insights enabled
 	 */
 }
 
@@ -995,7 +788,7 @@ pgss_shmem_shutdown(int code, Datum arg)
 		}
 	}
 
-	/* Dump global statistics for pg_stat_statements */
+	/* Dump global statistics for pg_stat_insights */
 	if (fwrite(&pgss->stats, sizeof(pgssGlobalStats), 1, file) != 1)
 		goto error;
 
@@ -1203,21 +996,21 @@ pgss_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	 * counting of optimizable statements that are directly contained in
 	 * utility statements.
 	 */
-	if (pgss_enabled(nesting_level) && queryDesc->plannedstmt->queryId != INT64CONST(0))
-	{
-		/*
-		 * Set up to track total elapsed time in ExecutorRun.  Make sure the
-		 * space is allocated in the per-query context so it will go away at
-		 * ExecutorEnd.
-		 */
-		if (queryDesc->totaltime == NULL)
-		{
-			MemoryContext oldcxt;
+	if (queryDesc->plannedstmt->queryId == 0)
+		return;
 
-			oldcxt = MemoryContextSwitchTo(queryDesc->estate->es_query_cxt);
-			queryDesc->totaltime = InstrAlloc(1, INSTRUMENT_ALL, false);
-			MemoryContextSwitchTo(oldcxt);
-		}
+	/*
+	 * Set up to track total elapsed time in ExecutorRun.  Make sure the
+	 * space is allocated in the per-query context so it will go away at
+	 * ExecutorEnd.
+	 */
+	if (queryDesc->totaltime == NULL)
+	{
+		MemoryContext oldcxt;
+
+		oldcxt = MemoryContextSwitchTo(queryDesc->estate->es_query_cxt);
+		queryDesc->totaltime = InstrAlloc(1, INSTRUMENT_ALL, false);
+		MemoryContextSwitchTo(oldcxt);
 	}
 }
 
@@ -1326,7 +1119,7 @@ pgss_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 	 * since we are already measuring the statement's costs at the utility
 	 * level.
 	 *
-	 * Note that this is only done if pg_stat_statements is enabled and
+	 * Note that this is only done if pg_stat_insights is enabled and
 	 * configured to track utility statements, in the unlikely possibility
 	 * that user configured another extension to handle utility statements
 	 * only.
@@ -1696,6 +1489,65 @@ pgss_store(const char *query, int64 queryId,
 		entry->counters.parallel_workers_to_launch += parallel_workers_to_launch;
 		entry->counters.parallel_workers_launched += parallel_workers_launched;
 
+		/* --- Enhanced metrics population --- */
+		/* Plan details */
+		if (queryDesc && queryDesc->plannedstmt)
+		{
+			entry->counters.plan_type = (int32) queryDesc->plannedstmt->planTree ? queryDesc->plannedstmt->planTree->type : 0;
+			entry->counters.plan_cost = queryDesc->plannedstmt->planTree ? queryDesc->plannedstmt->planTree->total_cost : 0.0;
+			entry->counters.plan_rows_estimated = queryDesc->plannedstmt->planTree ? (int64) queryDesc->plannedstmt->planTree->plan_rows : 0;
+			entry->counters.plan_rows_actual = queryDesc->estate ? (int64) queryDesc->estate->es_processed : 0;
+		}
+		/* Wait event (from backend status) */
+		strncpy(entry->counters.wait_event, pgstat_get_wait_event(), sizeof(entry->counters.wait_event)-1);
+		entry->counters.wait_event[sizeof(entry->counters.wait_event)-1] = '\0';
+		/* Lock count (from lock manager) */
+		entry->counters.lock_count = (int32) LockCountForCurrentBackend();
+		/* Temp files (from buffer usage) */
+		entry->counters.temp_files = bufusage ? bufusage->temp_files : 0;
+		/* Cache hit rate */
+		entry->counters.cache_hit_rate = bufusage && (bufusage->shared_blks_hit + bufusage->shared_blks_read) > 0 ?
+			(double) bufusage->shared_blks_hit / (bufusage->shared_blks_hit + bufusage->shared_blks_read) : 0.0;
+		/* Error count and last error (from error context) */
+		entry->counters.error_count = GetCurrentErrorCount();
+		strncpy(entry->counters.last_error, GetLastErrorMessage(), sizeof(entry->counters.last_error)-1);
+		entry->counters.last_error[sizeof(entry->counters.last_error)-1] = '\0';
+		/* Error details */
+		entry->counters.error_elevel = GetLastErrorLevel();
+		entry->counters.error_sqlcode = GetLastErrorSqlCode();
+		strncpy(entry->counters.error_message, GetLastErrorMessage(), sizeof(entry->counters.error_message)-1);
+		entry->counters.error_message[sizeof(entry->counters.error_message)-1] = '\0';
+		/* Execution time percentiles (from timing array) */
+		CalculatePercentilesForEntry(&entry->counters, kind);
+		/* Response calls histogram (demo: bucket by total_time) */
+		int bucket = (int)(total_time / 10.0);
+		if (bucket < 0) bucket = 0;
+		if (bucket > 9) bucket = 9;
+		entry->counters.resp_calls_histogram[bucket]++;
+		/* Memory usage (from memory context) */
+		entry->counters.memory_usage = (int64) MemoryContextMemAllocated(queryDesc ? queryDesc->estate->es_query_cxt : NULL);
+		/* Application name */
+		strncpy(entry->counters.application_name, application_name, sizeof(entry->counters.application_name)-1);
+		entry->counters.application_name[sizeof(entry->counters.application_name)-1] = '\0';
+		/* Client IP */
+		if (MyProcPort && MyProcPort->remote_host)
+		{
+			strncpy(entry->counters.client_ip, MyProcPort->remote_host, sizeof(entry->counters.client_ip)-1);
+			entry->counters.client_ip[sizeof(entry->counters.client_ip)-1] = '\0';
+		}
+		else
+		{
+			entry->counters.client_ip[0] = '\0';
+		}
+		/* Backend PID */
+		entry->counters.backend_pid = MyProcPid;
+		/* Transaction ID */
+		entry->counters.transaction_id = GetCurrentTransactionIdIfAny();
+		/* Retry count (from statement context) */
+		entry->counters.retry_count = GetCurrentStatementRetryCount();
+		/* Comments (extract from query text if available) */
+		ExtractQueryComments(query, entry->counters.comments, sizeof(entry->counters.comments));
+
 		SpinLockRelease(&entry->mutex);
 	}
 
@@ -1711,7 +1563,7 @@ done:
  * Reset statement statistics corresponding to userid, dbid, and queryid.
  */
 Datum
-pg_stat_statements_reset_1_7(PG_FUNCTION_ARGS)
+pg_stat_insights_reset_1_7(PG_FUNCTION_ARGS)
 {
 	Oid			userid;
 	Oid			dbid;
@@ -1727,7 +1579,7 @@ pg_stat_statements_reset_1_7(PG_FUNCTION_ARGS)
 }
 
 Datum
-pg_stat_statements_reset_1_11(PG_FUNCTION_ARGS)
+pg_stat_insights_reset_1_11(PG_FUNCTION_ARGS)
 {
 	Oid			userid;
 	Oid			dbid;
@@ -1746,7 +1598,7 @@ pg_stat_statements_reset_1_11(PG_FUNCTION_ARGS)
  * Reset statement statistics.
  */
 Datum
-pg_stat_statements_reset(PG_FUNCTION_ARGS)
+pg_stat_insights_reset(PG_FUNCTION_ARGS)
 {
 	entry_reset(0, 0, 0, false);
 
@@ -1763,8 +1615,8 @@ pg_stat_statements_reset(PG_FUNCTION_ARGS)
 #define PG_STAT_STATEMENTS_COLS_V1_10	43
 #define PG_STAT_STATEMENTS_COLS_V1_11	49
 #define PG_STAT_STATEMENTS_COLS_V1_12	52
-#define PG_STAT_STATEMENTS_COLS_V1_14	67
-#define PG_STAT_STATEMENTS_COLS			67	/* maximum of above */
+#define PG_STAT_STATEMENTS_COLS_V1_14	55
+#define PG_STAT_STATEMENTS_COLS			55	/* maximum of above */
 
 /*
  * Retrieve statement statistics.
@@ -1777,101 +1629,91 @@ pg_stat_statements_reset(PG_FUNCTION_ARGS)
  * function.  Unfortunately we weren't bright enough to do that for 1.1.
  */
 Datum
-pg_stat_statements_1_14(PG_FUNCTION_ARGS)
+pg_stat_insights_1_12(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_14, showtext);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_12, showtext);
 
 	return (Datum) 0;
 }
 
 Datum
-pg_stat_statements_1_12(PG_FUNCTION_ARGS)
+pg_stat_insights_1_11(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_12, showtext);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_11, showtext);
 
 	return (Datum) 0;
 }
 
 Datum
-pg_stat_statements_1_11(PG_FUNCTION_ARGS)
+pg_stat_insights_1_10(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_11, showtext);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_10, showtext);
 
 	return (Datum) 0;
 }
 
 Datum
-pg_stat_statements_1_10(PG_FUNCTION_ARGS)
+pg_stat_insights_1_9(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_10, showtext);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_9, showtext);
 
 	return (Datum) 0;
 }
 
 Datum
-pg_stat_statements_1_9(PG_FUNCTION_ARGS)
+pg_stat_insights_1_8(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_9, showtext);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_8, showtext);
 
 	return (Datum) 0;
 }
 
 Datum
-pg_stat_statements_1_8(PG_FUNCTION_ARGS)
+pg_stat_insights_1_3(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_8, showtext);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_3, showtext);
 
 	return (Datum) 0;
 }
 
 Datum
-pg_stat_statements_1_3(PG_FUNCTION_ARGS)
+pg_stat_insights_1_2(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_3, showtext);
-
-	return (Datum) 0;
-}
-
-Datum
-pg_stat_statements_1_2(PG_FUNCTION_ARGS)
-{
-	bool		showtext = PG_GETARG_BOOL(0);
-
-	pg_stat_statements_internal(fcinfo, PGSS_V1_2, showtext);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_2, showtext);
 
 	return (Datum) 0;
 }
 
 /*
- * Legacy entry point for pg_stat_statements() API versions 1.0 and 1.1.
+ * Legacy entry point for pg_stat_insights() API versions 1.0 and 1.1.
  * This can be removed someday, perhaps.
  */
 Datum
-pg_stat_statements(PG_FUNCTION_ARGS)
+pg_stat_insights(PG_FUNCTION_ARGS)
 {
 	/* If it's really API 1.1, we'll figure that out below */
-	pg_stat_statements_internal(fcinfo, PGSS_V1_0, true);
+	pg_stat_insights_internal(fcinfo, PGSS_V1_14, true);
 
 	return (Datum) 0;
 }
 
-/* Common code for all versions of pg_stat_statements() */
+/* Common code for all versions of pg_stat_insights() */
 static void
-pg_stat_statements_internal(FunctionCallInfo fcinfo,
+pg_stat_insights_internal(FunctionCallInfo fcinfo,
 							pgssVersion api_version,
 							bool showtext)
 {
@@ -1895,7 +1737,7 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 	if (!pgss || !pgss_hash)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("pg_stat_statements must be loaded via \"shared_preload_libraries\"")));
+				 errmsg("pg_stat_insights must be loaded via \"shared_preload_libraries\"")));
 
 	InitMaterializedSRF(fcinfo, 0);
 
@@ -1904,53 +1746,10 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 	 * being a good safety check, we need a kluge here to detect API version
 	 * 1.1, which was wedged into the code in an ill-considered way.
 	 */
-	switch (rsinfo->setDesc->natts)
-	{
-		case PG_STAT_STATEMENTS_COLS_V1_0:
-			if (api_version != PGSS_V1_0)
-				elog(ERROR, "incorrect number of output arguments");
-			break;
-		case PG_STAT_STATEMENTS_COLS_V1_1:
-			/* pg_stat_statements() should have told us 1.0 */
-			if (api_version != PGSS_V1_0)
-				elog(ERROR, "incorrect number of output arguments");
-			api_version = PGSS_V1_1;
-			break;
-		case PG_STAT_STATEMENTS_COLS_V1_2:
-			if (api_version != PGSS_V1_2)
-				elog(ERROR, "incorrect number of output arguments");
-			break;
-		case PG_STAT_STATEMENTS_COLS_V1_3:
-			if (api_version != PGSS_V1_3)
-				elog(ERROR, "incorrect number of output arguments");
-			break;
-		case PG_STAT_STATEMENTS_COLS_V1_8:
-			if (api_version != PGSS_V1_8)
-				elog(ERROR, "incorrect number of output arguments");
-			break;
-		case PG_STAT_STATEMENTS_COLS_V1_9:
-			if (api_version != PGSS_V1_9)
-				elog(ERROR, "incorrect number of output arguments");
-			break;
-		case PG_STAT_STATEMENTS_COLS_V1_10:
-			if (api_version != PGSS_V1_10)
-				elog(ERROR, "incorrect number of output arguments");
-			break;
-		case PG_STAT_STATEMENTS_COLS_V1_11:
-			if (api_version != PGSS_V1_11)
-				elog(ERROR, "incorrect number of output arguments");
-			break;
-	case PG_STAT_STATEMENTS_COLS_V1_12:
-		if (api_version != PGSS_V1_12)
-			elog(ERROR, "incorrect number of output arguments");
-		break;
-	case PG_STAT_STATEMENTS_COLS_V1_14:
-		if (api_version != PGSS_V1_14)
-			elog(ERROR, "incorrect number of output arguments");
-		break;
-	default:
+	if (api_version != PGSS_V1_14)
+		elog(ERROR, "Only PGSS_V1_14 is supported");
+	if (rsinfo->setDesc->natts != PG_STAT_STATEMENTS_COLS_V1_14)
 		elog(ERROR, "incorrect number of output arguments");
-	}
 
 	/*
 	 * We'd like to load the query text file (if needed) while not holding any
@@ -2146,8 +1945,7 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 		if (api_version >= PGSS_V1_1)
 		{
 			values[i++] = Float8GetDatumFast(tmp.shared_blk_read_time);
-			values[i++] = Float8GetDatumFast(tmp.shared_blk_write_time);
-		}
+		
 		if (api_version >= PGSS_V1_11)
 		{
 			values[i++] = Float8GetDatumFast(tmp.local_blk_read_time);
@@ -2200,44 +1998,46 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 			values[i++] = Int64GetDatumFast(tmp.parallel_workers_to_launch);
 			values[i++] = Int64GetDatumFast(tmp.parallel_workers_launched);
 		}
-	if (api_version >= PGSS_V1_11)
-	{
-		values[i++] = TimestampTzGetDatum(stats_since);
-		values[i++] = TimestampTzGetDatum(minmax_stats_since);
-	}
-	
-	if (api_version >= PGSS_V1_14)
-	{
-		values[i++] = Int32GetDatum(tmp.query_complexity);
-		values[i++] = Int32GetDatum(tmp.query_length);
-		values[i++] = Int32GetDatum(tmp.param_count);
-		values[i++] = Int32GetDatum(tmp.plan_type);
-		values[i++] = Float8GetDatumFast(tmp.plan_cost);
-		values[i++] = Int64GetDatumFast(tmp.plan_rows_estimated);
-		values[i++] = Int64GetDatumFast(tmp.plan_rows_actual);
-		values[i++] = Float8GetDatumFast((tmp.plan_rows_estimated > 0) ? 
-										  ((double)tmp.plan_rows_actual / tmp.plan_rows_estimated) : 0.0);
-		values[i++] = CStringGetTextDatum(tmp.wait_event);
-		values[i++] = Int32GetDatum(tmp.lock_count);
-		values[i++] = Int64GetDatumFast(tmp.temp_files);
-		values[i++] = Float8GetDatumFast((tmp.shared_blks_hit + tmp.shared_blks_read > 0) ?
-										  ((double)tmp.shared_blks_hit / (tmp.shared_blks_hit + tmp.shared_blks_read)) : 0.0);
-		values[i++] = Int32GetDatum(tmp.error_count);
-		values[i++] = CStringGetTextDatum(tmp.last_error);
-		nulls[i++] = true;
-	}
+		if (api_version >= PGSS_V1_11)
+		{
+			values[i++] = TimestampTzGetDatum(stats_since);
+			values[i++] = TimestampTzGetDatum(minmax_stats_since);
+		}
+		if (api_version >= PGSS_V1_14)
+		{
+			values[i++] = Int32GetDatum(tmp.query_complexity);
+			values[i++] = Int32GetDatum(tmp.query_length);
+			values[i++] = Int32GetDatum(tmp.param_count);
+			/* Enhanced metrics: plan, wait, lock, error, percentiles, memory, context, retry, histogram, comments */
+			values[i++] = Int32GetDatum(tmp.plan_type);
+			values[i++] = Float8GetDatum(tmp.plan_cost);
+			values[i++] = Int64GetDatumFast(tmp.plan_rows_estimated);
+			values[i++] = Int64GetDatumFast(tmp.plan_rows_actual);
+			values[i++] = CStringGetTextDatum(tmp.wait_event);
+			values[i++] = Int32GetDatum(tmp.lock_count);
+			values[i++] = Int64GetDatumFast(tmp.temp_files);
+			values[i++] = Float8GetDatum(tmp.cache_hit_rate);
+			values[i++] = Int32GetDatum(tmp.error_count);
+			values[i++] = CStringGetTextDatum(tmp.last_error);
+			values[i++] = Float8GetDatum(tmp.exec_time_p50);
+			values[i++] = Float8GetDatum(tmp.exec_time_p95);
+			values[i++] = Float8GetDatum(tmp.exec_time_p99);
+			values[i++] = Int64GetDatumFast(tmp.memory_usage);
+			values[i++] = CStringGetTextDatum(tmp.application_name);
+			values[i++] = Int32GetDatum(tmp.backend_pid);
+			values[i++] = Int64GetDatumFast(tmp.transaction_id);
+			values[i++] = Int32GetDatum(tmp.retry_count);
+			values[i++] = CStringGetTextDatum(tmp.client_ip);
+			/* Output histogram as array */
+			ArrayType *hist_array = construct_array((Datum *)tmp.resp_calls_histogram, 10, INT4OID, sizeof(int32), true, 'i');
+			values[i++] = PointerGetDatum(hist_array);
+			values[i++] = Int32GetDatum(tmp.error_elevel);
+			values[i++] = Int32GetDatum(tmp.error_sqlcode);
+			values[i++] = CStringGetTextDatum(tmp.error_message);
+			values[i++] = CStringGetTextDatum(tmp.comments);
+		}
 
-	Assert(i == (api_version == PGSS_V1_0 ? PG_STAT_STATEMENTS_COLS_V1_0 :
-				 api_version == PGSS_V1_1 ? PG_STAT_STATEMENTS_COLS_V1_1 :
-				 api_version == PGSS_V1_2 ? PG_STAT_STATEMENTS_COLS_V1_2 :
-				 api_version == PGSS_V1_3 ? PG_STAT_STATEMENTS_COLS_V1_3 :
-				 api_version == PGSS_V1_8 ? PG_STAT_STATEMENTS_COLS_V1_8 :
-				 api_version == PGSS_V1_9 ? PG_STAT_STATEMENTS_COLS_V1_9 :
-				 api_version == PGSS_V1_10 ? PG_STAT_STATEMENTS_COLS_V1_10 :
-				 api_version == PGSS_V1_11 ? PG_STAT_STATEMENTS_COLS_V1_11 :
-				 api_version == PGSS_V1_12 ? PG_STAT_STATEMENTS_COLS_V1_12 :
-				 api_version == PGSS_V1_14 ? PG_STAT_STATEMENTS_COLS_V1_14 :
-				 -1 /* fail if you forget to update this assert */ ));
+	Assert(i == PG_STAT_STATEMENTS_COLS_V1_14);
 
 		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
 	}
@@ -2247,14 +2047,14 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 	free(qbuffer);
 }
 
-/* Number of output arguments (columns) for pg_stat_statements_info */
+/* Number of output arguments (columns) for pg_stat_insights_info */
 #define PG_STAT_STATEMENTS_INFO_COLS	2
 
 /*
- * Return statistics of pg_stat_statements.
+ * Return statistics of pg_stat_insights.
  */
 Datum
-pg_stat_statements_info(PG_FUNCTION_ARGS)
+pg_stat_insights_info(PG_FUNCTION_ARGS)
 {
 	pgssGlobalStats stats;
 	TupleDesc	tupdesc;
@@ -2264,13 +2064,13 @@ pg_stat_statements_info(PG_FUNCTION_ARGS)
 	if (!pgss || !pgss_hash)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("pg_stat_statements must be loaded via \"shared_preload_libraries\"")));
+				 errmsg("pg_stat_insights must be loaded via \"shared_preload_libraries\"")));
 
 	/* Build a tuple descriptor for our result type */
 	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
 		elog(ERROR, "return type must be a row type");
 
-	/* Read global statistics for pg_stat_statements */
+	/* Read global statistics for pg_stat_insights */
 	SpinLockAcquire(&pgss->mutex);
 	stats = pgss->stats;
 	SpinLockRelease(&pgss->mutex);
@@ -2892,8 +2692,8 @@ if (e) { \
 		/* When requested reset only min/max statistics of an entry */ \
 		for (int kind = 0; kind < PGSS_NUMKIND; kind++) \
 		{ \
-			e->counters.max_time[kind] = 0; \
-			e->counters.min_time[kind] = 0; \
+		 e->counters.max_time[kind] = 0; \
+		 e->counters.min_time[kind] = 0; \
 		} \
 		e->minmax_stats_since = stats_reset; \
 	} \
@@ -2922,7 +2722,7 @@ entry_reset(Oid userid, Oid dbid, int64 queryid, bool minmax_only)
 	if (!pgss || !pgss_hash)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("pg_stat_statements must be loaded via \"shared_preload_libraries\"")));
+				 errmsg("pg_stat_insights must be loaded via \"shared_preload_libraries\"")));
 
 	LWLockAcquire(pgss->lock, LW_EXCLUSIVE);
 	num_entries = hash_get_num_entries(pgss_hash);
@@ -2981,7 +2781,7 @@ entry_reset(Oid userid, Oid dbid, int64 queryid, bool minmax_only)
 		goto release_lock;
 
 	/*
-	 * Reset global statistics for pg_stat_statements since all entries are
+	 * Reset global statistics for pg_stat_insights since all entries are
 	 * removed.
 	 */
 	SpinLockAcquire(&pgss->mutex);

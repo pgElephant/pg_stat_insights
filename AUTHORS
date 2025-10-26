@@ -1,0 +1,21 @@
+# pg_stat_insights Authors
+
+## Core Team
+
+- pgElephant Team <team@pgelephant.org>
+
+## Contributors
+
+This project is developed and maintained by pgElephant, Inc.
+
+Special thanks to all contributors who have helped improve pg_stat_insights.
+
+## Acknowledgments
+
+- PostgreSQL Global Development Group for pg_stat_statements
+- The PostgreSQL community for their invaluable feedback and testing
+
+---
+
+**Want to contribute?** See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+

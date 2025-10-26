@@ -1,0 +1,13 @@
+pg-stat-insights-postgresql-@PG_VERSION@ (1.0.0-1) unstable; urgency=low
+
+  * Initial Debian release
+  * PostgreSQL 13, 14, 15, 16, 17, 18 support
+  * 52 metrics across 11 views
+  * Enhanced performance monitoring capabilities
+  * Drop-in replacement for pg_stat_statements
+  * Response time tracking and cache analysis
+  * WAL monitoring and time-series data
+  * Prometheus/Grafana ready dashboards
+
+ -- pgElephant Team <team@pgelephant.org>  Sun, 27 Oct 2024 12:00:00 +0000
+

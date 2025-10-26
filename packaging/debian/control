@@ -1,0 +1,26 @@
+Source: pg-stat-insights-postgresql-@PG_VERSION@
+Section: database
+Priority: optional
+Maintainer: pgElephant Team <team@pgelephant.org>
+Build-Depends: debhelper (>= 9), postgresql-server-dev-@PG_VERSION@
+Standards-Version: 3.9.8
+Homepage: https://github.com/pgelephant/pg_stat_insights
+
+Package: postgresql-@PG_VERSION@-pg-stat-insights
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, postgresql-@PG_VERSION@
+Description: Advanced PostgreSQL query performance monitoring extension
+ pg_stat_insights is an advanced PostgreSQL extension for database performance
+ monitoring, query optimization, and SQL analytics. It tracks 52 comprehensive
+ metrics across 11 pre-built views to identify slow queries, optimize cache
+ performance, and monitor database health in real-time.
+ .
+ Features:
+  * 52 metric columns for comprehensive query analysis
+  * 11 pre-built views for instant insights
+  * Drop-in replacement for pg_stat_statements with enhanced metrics
+  * Compatible with PostgreSQL 13, 14, 15, 16, 17, 18
+  * Response time tracking and cache analysis
+  * WAL monitoring and time-series data
+  * Prometheus/Grafana ready with pre-built dashboards
+

@@ -1,0 +1,69 @@
+name: Build DEB Package
+
+on:
+  workflow_call:
+    inputs:
+      pg_version:
+        required: true
+        type: string
+      package_version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: PG ${{ inputs.pg_version }} DEB
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Build DEB in Docker
+        run: |
+          docker run --rm \
+            -v $PWD:/workspace \
+            -w /workspace \
+            ubuntu:22.04 \
+            bash -c '
+              set -e
+              export DEBIAN_FRONTEND=noninteractive
+              
+              # Install build tools
+              apt-get update
+              apt-get install -y build-essential debhelper fakeroot wget gnupg2 lsb-release
+              
+              # Install PostgreSQL repository
+              wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
+              echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+              apt-get update
+              
+              # Install PostgreSQL development packages
+              apt-get install -y postgresql-server-dev-${{ inputs.pg_version }}
+              
+              # Prepare build directory
+              BUILD_DIR=/tmp/pg_stat_insights-postgresql-${{ inputs.pg_version }}-${{ inputs.package_version }}
+              mkdir -p $BUILD_DIR
+              cp -r *.c *.sql *.control Makefile LICENSE README.md $BUILD_DIR/
+              cp -r packaging/debian $BUILD_DIR/
+              
+              # Update version in control file
+              cd $BUILD_DIR
+              sed -i "s/@PG_VERSION@/${{ inputs.pg_version }}/g" debian/control
+              
+              # Build package
+              dpkg-buildpackage -us -uc -b
+              
+              # Copy built packages
+              mkdir -p /workspace/debs
+              cp /tmp/*.deb /workspace/debs/ || true
+              ls -lh /workspace/debs/
+            '
+      
+      - name: Upload DEB artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-pg${{ inputs.pg_version }}
+          path: debs/*.deb
+          retention-days: 30
+
