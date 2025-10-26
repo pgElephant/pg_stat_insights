@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       pg_versions:
-        description: 'PostgreSQL versions to build (comma-separated, e.g., 13,14,15,16,17,18)'
+        description: 'PostgreSQL versions to build (comma-separated, e.g., 16,17,18)'
         required: true
-        default: '13,14,15,16,17,18'
+        default: '16,17,18'
         type: string
       create_release:
         description: 'Create GitHub release with packages'
@@ -159,7 +159,7 @@ jobs:
             - 52 comprehensive metrics across 11 pre-built views
             - Track execution time, cache hits, WAL generation, JIT stats
             - Drop-in replacement for pg_stat_statements with enhanced analytics
-            - PostgreSQL 13, 14, 15, 16, 17, 18 support
+            - PostgreSQL 16, 17, 18 support
             
             ### Installation
             

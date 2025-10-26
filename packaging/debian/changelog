@@ -1,7 +1,7 @@
 pg-stat-insights (1.0.0-1) unstable; urgency=low
 
   * Initial Debian release
-  * PostgreSQL 13, 14, 15, 16, 17, 18 support
+  * PostgreSQL 16, 17, 18 support
   * 52 metrics across 11 views
   * Enhanced performance monitoring capabilities
   * Drop-in replacement for pg_stat_statements

@@ -27,7 +27,7 @@ Features:
 - 52 metric columns for comprehensive query analysis
 - 11 pre-built views for instant insights
 - Drop-in replacement for pg_stat_statements with enhanced metrics
-- Compatible with PostgreSQL 13, 14, 15, 16, 17, 18
+- Compatible with PostgreSQL 16, 17, 18
 - Response time tracking and cache analysis
 - WAL monitoring and time-series data
 - Prometheus/Grafana ready with pre-built dashboards
@@ -57,7 +57,8 @@ make install USE_PGXS=1 DESTDIR=%{buildroot}
 %changelog
 * Sun Oct 27 2024 pgElephant Team <team@pgelephant.org> - 1.0-1
 - Initial RPM release
-- PostgreSQL 13, 14, 15, 16, 17, 18 support
+- PostgreSQL 16, 17, 18 support
 - 52 metrics across 11 views
 - Enhanced performance monitoring capabilities
+- Requires PostgreSQL 16+ (uses queryjumble.h)
 

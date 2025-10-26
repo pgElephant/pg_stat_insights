@@ -4,9 +4,11 @@ This directory contains packaging files for building RPM and DEB packages of pg_
 
 ## Supported Versions
 
-- PostgreSQL 13, 14, 15, 16, 17, 18
+- PostgreSQL 16, 17, 18
 - Rocky Linux / AlmaLinux / RHEL 9 (RPM)
 - Ubuntu 22.04+ / Debian (DEB)
+
+**Note**: PostgreSQL 16+ is required due to dependency on `nodes/queryjumble.h` (added in PG 14).
 
 ## Package Structure
 
@@ -35,7 +37,7 @@ The packages are built automatically using GitHub Actions workflows:
 2. Select "Build Packages" workflow
 3. Click "Run workflow"
 4. Configure options:
-   - **pg_versions**: Comma-separated list (e.g., `13,14,15,16,17,18`)
+   - **pg_versions**: Comma-separated list (e.g., `16,17,18`)
    - **create_release**: Check to create GitHub release
    - **release_tag**: Release tag name (e.g., `REL_1_0`, `v1.0.0`)
 5. Click "Run workflow"

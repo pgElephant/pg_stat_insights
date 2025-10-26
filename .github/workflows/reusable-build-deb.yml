@@ -61,7 +61,7 @@ jobs:
               
               # Set PostgreSQL version for build dependencies
               sed -i "s/postgresql-server-dev-all/postgresql-server-dev-${{ inputs.pg_version }}/g" debian/control
-              sed -i "s/postgresql-13 | postgresql-14.*postgresql-18/postgresql-${{ inputs.pg_version }}/g" debian/control
+              sed -i "s/postgresql-16 | postgresql-17 | postgresql-18/postgresql-${{ inputs.pg_version }}/g" debian/control
               
               # Build package
               dpkg-buildpackage -us -uc -b

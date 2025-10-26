@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Initial release of pg_stat_insights
-- Support for PostgreSQL 13, 14, 15, 16, 17, 18
+- Support for PostgreSQL 16, 17, 18 (requires queryjumble.h added in PG 14+)
 - 52 comprehensive query performance metrics
 - 11 pre-built analytical views for instant insights
 - 11 configuration parameters for fine-tuning

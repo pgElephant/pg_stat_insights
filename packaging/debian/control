@@ -2,13 +2,13 @@ Source: pg-stat-insights
 Section: database
 Priority: optional
 Maintainer: pgElephant Team <team@pgelephant.org>
-Build-Depends: debhelper (>= 9), postgresql-server-dev-all | postgresql-server-dev-13 | postgresql-server-dev-14 | postgresql-server-dev-15 | postgresql-server-dev-16 | postgresql-server-dev-17 | postgresql-server-dev-18
+Build-Depends: debhelper (>= 9), postgresql-server-dev-all | postgresql-server-dev-16 | postgresql-server-dev-17 | postgresql-server-dev-18
 Standards-Version: 3.9.8
 Homepage: https://github.com/pgelephant/pg_stat_insights
 
 Package: pg-stat-insights
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, postgresql-server-dev-all | postgresql-13 | postgresql-14 | postgresql-15 | postgresql-16 | postgresql-17 | postgresql-18
+Depends: ${shlibs:Depends}, ${misc:Depends}, postgresql-server-dev-all | postgresql-16 | postgresql-17 | postgresql-18
 Description: Advanced PostgreSQL query performance monitoring extension
  pg_stat_insights is an advanced PostgreSQL extension for database performance
  monitoring, query optimization, and SQL analytics. It tracks 52 comprehensive
@@ -19,7 +19,7 @@ Description: Advanced PostgreSQL query performance monitoring extension
   * 52 metric columns for comprehensive query analysis
   * 11 pre-built views for instant insights
   * Drop-in replacement for pg_stat_statements with enhanced metrics
-  * Compatible with PostgreSQL 13, 14, 15, 16, 17, 18
+  * Compatible with PostgreSQL 16, 17, 18
   * Response time tracking and cache analysis
   * WAL monitoring and time-series data
   * Prometheus/Grafana ready with pre-built dashboards
