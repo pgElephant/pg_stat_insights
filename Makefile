@@ -28,6 +28,6 @@ REGRESS = select dml cursors utility level_tracking planning \
 
 TAP_TESTS = 1
 
-PG_CONFIG = pg_config
+PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
