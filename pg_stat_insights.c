@@ -339,8 +339,11 @@ static PlannedStmt *pgsi_planner(Query *parse,
 static void pgsi_ExecutorStart(QueryDesc *queryDesc, int eflags);
 static void pgsi_ExecutorRun(QueryDesc *queryDesc,
 							 ScanDirection direction,
-							 uint64 count,
-							 bool execute_once);
+							 uint64 count
+#if PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 180000
+							 , bool execute_once
+#endif
+							 );
 static void pgsi_ExecutorFinish(QueryDesc *queryDesc);
 static void pgsi_ExecutorEnd(QueryDesc *queryDesc);
 static void pgsi_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
@@ -1026,15 +1029,27 @@ pgsi_ExecutorStart(QueryDesc *queryDesc, int eflags)
  * ExecutorRun hook: all we need do is track nesting depth
  */
 static void
-pgsi_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint64 count, bool execute_once)
+pgsi_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint64 count
+#if PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 180000
+				 , bool execute_once
+#endif
+				 )
 {
 	nesting_level++;
 	PG_TRY();
 	{
 		if (prev_ExecutorRun)
+#if PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 180000
 			prev_ExecutorRun(queryDesc, direction, count, execute_once);
+#else
+			prev_ExecutorRun(queryDesc, direction, count);
+#endif
 		else
+#if PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 180000
 			standard_ExecutorRun(queryDesc, direction, count, execute_once);
+#else
+			standard_ExecutorRun(queryDesc, direction, count);
+#endif
 	}
 	PG_FINALLY();
 	{
@@ -1460,12 +1475,14 @@ pgsi_store(const char *query, int64 queryId,
 		entry->counters.local_blks_written += bufusage->local_blks_written;
 		entry->counters.temp_blks_read += bufusage->temp_blks_read;
 		entry->counters.temp_blks_written += bufusage->temp_blks_written;
+#if PG_VERSION_NUM >= 170000
 		entry->counters.shared_blk_read_time += INSTR_TIME_GET_MILLISEC(bufusage->shared_blk_read_time);
 		entry->counters.shared_blk_write_time += INSTR_TIME_GET_MILLISEC(bufusage->shared_blk_write_time);
 		entry->counters.local_blk_read_time += INSTR_TIME_GET_MILLISEC(bufusage->local_blk_read_time);
 		entry->counters.local_blk_write_time += INSTR_TIME_GET_MILLISEC(bufusage->local_blk_write_time);
 		entry->counters.temp_blk_read_time += INSTR_TIME_GET_MILLISEC(bufusage->temp_blk_read_time);
 		entry->counters.temp_blk_write_time += INSTR_TIME_GET_MILLISEC(bufusage->temp_blk_write_time);
+#endif
 		entry->counters.usage += USAGE_EXEC(total_time);
 		entry->counters.wal_records += walusage->wal_records;
 		entry->counters.wal_fpi += walusage->wal_fpi;
@@ -1475,9 +1492,11 @@ pgsi_store(const char *query, int64 queryId,
 			entry->counters.jit_functions += jitusage->created_functions;
 			entry->counters.jit_generation_time += INSTR_TIME_GET_MILLISEC(jitusage->generation_counter);
 
+#if PG_VERSION_NUM >= 170000
 			if (INSTR_TIME_GET_MILLISEC(jitusage->deform_counter))
 				entry->counters.jit_deform_count++;
 			entry->counters.jit_deform_time += INSTR_TIME_GET_MILLISEC(jitusage->deform_counter);
+#endif
 
 			if (INSTR_TIME_GET_MILLISEC(jitusage->inlining_counter))
 				entry->counters.jit_inlining_count++;
@@ -3041,5 +3060,14 @@ comp_location(const void *a, const void *b)
 	int			l = ((const LocationLen *) a)->location;
 	int			r = ((const LocationLen *) b)->location;
 
+#if PG_VERSION_NUM >= 170000
 	return pg_cmp_s32(l, r);
+#else
+	if (l < r)
+		return -1;
+	else if (l > r)
+		return 1;
+	else
+		return 0;
+#endif
 }

@@ -132,7 +132,7 @@ jobs:
           
           ## Overview
           
-          `pg_stat_insights` provides enhanced query performance monitoring for PostgreSQL 13-18, offering more metrics and views than pg_stat_statements and pg_stat_monitor combined.
+          `pg_stat_insights` provides enhanced query performance monitoring for PostgreSQL 16-18, offering more metrics and views than pg_stat_statements and pg_stat_monitor combined.
 
           **Key Features:**
 
@@ -141,7 +141,7 @@ jobs:
           - **11 configuration parameters** - Fine-tune tracking and statistics
           - **Response time categorization** - Bucket queries by execution time
           - **Time-series tracking** - Historical performance analysis
-          - **PostgreSQL 13-18 compatible** - Full support for latest versions
+          - **PostgreSQL 16, 17, 18 compatible** - Full support for latest versions
 
           ## Quick Install
           
@@ -191,7 +191,7 @@ jobs:
           
           ## Prerequisites
           
-          - PostgreSQL 13, 14, 15, 16, 17, or 18
+          - PostgreSQL 16, 17, or 18
           - Build tools: gcc, make
           - PostgreSQL development headers
           
