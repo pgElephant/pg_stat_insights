@@ -256,8 +256,13 @@ jobs:
         run: |
           RELEASES_DIR="/Users/pgedge/pge/releases"
           
-          if [ -d "$RELEASES_DIR" ]; then
-            echo "📦 Copying pg_stat_insights packages to $RELEASES_DIR (organized by PostgreSQL version)"
+          # Create releases directory if it doesn't exist
+          if [ ! -d "$RELEASES_DIR" ]; then
+            echo "📦 Creating releases directory structure at $RELEASES_DIR"
+            mkdir -p "$RELEASES_DIR"/{deb,rpm,osx}/{pg13,pg14,pg15,pg16,pg17,pg18}
+          fi
+          
+          echo "📦 Copying pg_stat_insights packages to $RELEASES_DIR (organized by PostgreSQL version)"
             
             extract_pg_version() {
               local filename="$1"
@@ -333,10 +338,6 @@ jobs:
                 echo "    macOS: $(ls -1 "$RELEASES_DIR/osx/pg${pg_ver}" 2>/dev/null | wc -l) files"
               fi
             done
-          else
-            echo "⚠️  Warning: Releases directory not found at $RELEASES_DIR"
-            echo "This step will be skipped in GitHub Actions runners"
-          fi
       
       - name: Create GitHub Release
         if: steps.packages.outputs.has_packages == 'true'
