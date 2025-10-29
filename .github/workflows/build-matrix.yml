@@ -252,9 +252,16 @@ jobs:
           fi
       
       - name: Copy packages to local releases directory
-        if: steps.packages.outputs.has_packages == 'true'
+        if: steps.packages.outputs.has_packages == 'true' && runner.os != 'Linux'
+        continue-on-error: true
         run: |
           RELEASES_DIR="/Users/pgedge/pge/releases"
+          
+          # Skip on GitHub Actions runners
+          if [ ! -w "/Users/pgedge" ] && [ ! -w "/Users" ]; then
+            echo "⚠️  Skipping: Not running on local machine (GitHub Actions runner detected)"
+            exit 0
+          fi
           
           # Create releases directory if it doesn't exist
           if [ ! -d "$RELEASES_DIR" ]; then
