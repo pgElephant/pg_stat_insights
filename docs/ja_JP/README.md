@@ -221,6 +221,8 @@ MIT ライセンス - Copyright (c) 2024-2025, pgElephant, Inc.
 ## リンク
 
 - [完全なドキュメント](https://pgelephant.github.io/pg_stat_insights/)
+- [インタラクティブデモ](https://www.pgelephant.com/pg-stat-insights) - オンラインでpg_stat_insightsを体験
+- [ブログ記事](https://www.pgelephant.com/blog/pg-stat-insights) - 包括的なガイドとベストプラクティス
 - [GitHub リポジトリ](https://github.com/pgelephant/pg_stat_insights)
 - [問題を報告](https://github.com/pgelephant/pg_stat_insights/issues)
 - [ディスカッション](https://github.com/pgelephant/pg_stat_insights/discussions)

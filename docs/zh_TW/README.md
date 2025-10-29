@@ -221,6 +221,8 @@ MIT 授權 - 版權所有 (c) 2024-2025, pgElephant, Inc.
 ## 連結
 
 - [完整文件](https://pgelephant.github.io/pg_stat_insights/)
+- [互動式演示](https://www.pgelephant.com/pg-stat-insights) - 線上體驗 pg_stat_insights
+- [部落格文章](https://www.pgelephant.com/blog/pg-stat-insights) - 完整指南和最佳實務
 - [GitHub 儲存庫](https://github.com/pgelephant/pg_stat_insights)
 - [回報問題](https://github.com/pgelephant/pg_stat_insights/issues)
 - [討論](https://github.com/pgelephant/pg_stat_insights/discussions)

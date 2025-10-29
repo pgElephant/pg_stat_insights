@@ -221,6 +221,8 @@ See [LICENSE](LICENSE) for details.
 ## Links
 
 - [Complete Documentation](https://pgelephant.github.io/pg_stat_insights/)
+- [Interactive Demo](https://www.pgelephant.com/pg-stat-insights) - Try pg_stat_insights online
+- [Blog Article](https://www.pgelephant.com/blog/pg-stat-insights) - Comprehensive guide and best practices
 - [GitHub Repository](https://github.com/pgelephant/pg_stat_insights)
 - [Report Issues](https://github.com/pgelephant/pg_stat_insights/issues)
 - [Discussions](https://github.com/pgelephant/pg_stat_insights/discussions)
