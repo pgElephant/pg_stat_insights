@@ -1,0 +1,58 @@
+# LANGUAGE message translation file for pg_stat_insights
+# Copyright (C) 2025 pgElephant Team
+# This file is distributed under the same license as the pg_stat_insights package.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: pg_stat_insights 1.0\n"
+"Report-Msgid-Bugs-To: team@pgelephant.org\n"
+"POT-Creation-Date: 2025-01-29 12:00+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights: Advanced query performance monitoring for PostgreSQL"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Tracks execution statistics of all SQL statements executed by the server"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Could not initialize shared memory for pg_stat_insights"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights must be loaded via shared_preload_libraries"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Insufficient shared memory for pg_stat_insights"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Query text length exceeds maximum"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Successfully reset pg_stat_insights statistics"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Invalid query ID for reset operation"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Statistics collection is disabled"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Extension initialization complete"
+msgstr ""
+

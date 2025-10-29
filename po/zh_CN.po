@@ -1,0 +1,57 @@
+# Simplified Chinese translation for pg_stat_insights
+# Copyright (C) 2025 pgElephant Team
+# This file is distributed under the same license as the pg_stat_insights package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: pg_stat_insights 1.0\n"
+"Report-Msgid-Bugs-To: team@pgelephant.org\n"
+"POT-Creation-Date: 2025-01-29 12:00+0000\n"
+"PO-Revision-Date: 2025-01-29 12:00+0000\n"
+"Last-Translator: pgElephant Team <team@pgelephant.org>\n"
+"Language-Team: Chinese (Simplified) <zh@li.org>\n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights: Advanced query performance monitoring for PostgreSQL"
+msgstr "pg_stat_insights: PostgreSQL高级查询性能监控"
+
+#: pg_stat_insights.c
+msgid "Tracks execution statistics of all SQL statements executed by the server"
+msgstr "跟踪服务器执行的所有SQL语句的执行统计信息"
+
+#: pg_stat_insights.c
+msgid "Could not initialize shared memory for pg_stat_insights"
+msgstr "无法为pg_stat_insights初始化共享内存"
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights must be loaded via shared_preload_libraries"
+msgstr "pg_stat_insights必须通过shared_preload_libraries加载"
+
+#: pg_stat_insights.c
+msgid "Insufficient shared memory for pg_stat_insights"
+msgstr "pg_stat_insights的共享内存不足"
+
+#: pg_stat_insights.c
+msgid "Query text length exceeds maximum"
+msgstr "查询文本长度超过最大值"
+
+#: pg_stat_insights.c
+msgid "Successfully reset pg_stat_insights statistics"
+msgstr "成功重置pg_stat_insights统计信息"
+
+#: pg_stat_insights.c
+msgid "Invalid query ID for reset operation"
+msgstr "重置操作的查询ID无效"
+
+#: pg_stat_insights.c
+msgid "Statistics collection is disabled"
+msgstr "统计信息收集已禁用"
+
+#: pg_stat_insights.c
+msgid "Extension initialization complete"
+msgstr "扩展初始化完成"
+

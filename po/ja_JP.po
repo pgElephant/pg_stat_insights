@@ -1,0 +1,57 @@
+# Japanese translation for pg_stat_insights
+# Copyright (C) 2025 pgElephant Team
+# This file is distributed under the same license as the pg_stat_insights package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: pg_stat_insights 1.0\n"
+"Report-Msgid-Bugs-To: team@pgelephant.org\n"
+"POT-Creation-Date: 2025-01-29 12:00+0000\n"
+"PO-Revision-Date: 2025-01-29 12:00+0000\n"
+"Last-Translator: pgElephant Team <team@pgelephant.org>\n"
+"Language-Team: Japanese <ja@li.org>\n"
+"Language: ja_JP\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights: Advanced query performance monitoring for PostgreSQL"
+msgstr "pg_stat_insights: PostgreSQLの高度なクエリパフォーマンス監視"
+
+#: pg_stat_insights.c
+msgid "Tracks execution statistics of all SQL statements executed by the server"
+msgstr "サーバーで実行されたすべてのSQL文の実行統計を追跡します"
+
+#: pg_stat_insights.c
+msgid "Could not initialize shared memory for pg_stat_insights"
+msgstr "pg_stat_insightsの共有メモリを初期化できませんでした"
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights must be loaded via shared_preload_libraries"
+msgstr "pg_stat_insightsはshared_preload_libraries経由でロードする必要があります"
+
+#: pg_stat_insights.c
+msgid "Insufficient shared memory for pg_stat_insights"
+msgstr "pg_stat_insightsの共有メモリが不足しています"
+
+#: pg_stat_insights.c
+msgid "Query text length exceeds maximum"
+msgstr "クエリテキストの長さが最大値を超えています"
+
+#: pg_stat_insights.c
+msgid "Successfully reset pg_stat_insights statistics"
+msgstr "pg_stat_insightsの統計情報のリセットに成功しました"
+
+#: pg_stat_insights.c
+msgid "Invalid query ID for reset operation"
+msgstr "リセット操作のクエリIDが無効です"
+
+#: pg_stat_insights.c
+msgid "Statistics collection is disabled"
+msgstr "統計情報の収集が無効になっています"
+
+#: pg_stat_insights.c
+msgid "Extension initialization complete"
+msgstr "拡張機能の初期化が完了しました"
+

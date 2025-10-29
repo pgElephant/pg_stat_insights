@@ -1,0 +1,682 @@
+# COMPLETE LANGUAGE message translation file for pg_stat_insights
+# Copyright (C) 2025 pgElephant Team
+# This file is distributed under the same license as the pg_stat_insights package.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: pg_stat_insights 1.0\n"
+"Report-Msgid-Bugs-To: team@pgelephant.org\n"
+"POT-Creation-Date: 2025-01-29 12:00+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+# ============================================================================
+# EXTENSION INITIALIZATION MESSAGES
+# ============================================================================
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights: Advanced query performance monitoring for PostgreSQL"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Tracks execution statistics of all SQL statements executed by the server"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Extension initialization complete"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights version %s loaded"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "PostgreSQL %s compatibility verified"
+msgstr ""
+
+# ============================================================================
+# ERROR MESSAGES (PGSI-E001 to E999)
+# ============================================================================
+
+#: pg_stat_insights.c
+msgid "Could not initialize shared memory for pg_stat_insights"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Increase shared_preload_libraries memory allocation"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights must be loaded via shared_preload_libraries"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Add 'pg_stat_insights' to shared_preload_libraries in postgresql.conf and restart PostgreSQL"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Insufficient shared memory for pg_stat_insights"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Requested %zu bytes, available %zu bytes"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Query text length exceeds maximum"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Query length: %d bytes, maximum: %d bytes"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Increase track_activity_query_size parameter"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Invalid query ID for reset operation"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Query ID %lld does not exist in statistics"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Could not allocate memory for query text"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Out of memory: requested %zu bytes"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Hash table entry allocation failed"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Hash table is full, cannot add new entry"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Failed to acquire lock for statistics update"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Lock timeout after %d ms"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Query normalization failed"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Query contains unsupported syntax: %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Statistics file is corrupted"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "File: %s, expected magic number %u, found %u"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Could not open statistics file"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "File: %s, error: %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Could not write statistics file"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Wrote %d bytes, expected %d bytes"
+msgstr ""
+
+# ============================================================================
+# WARNING MESSAGES (PGSI-W001 to W999)
+# ============================================================================
+
+#: pg_stat_insights.c
+msgid "Statistics collection is disabled"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Set pg_stat_insights.track = 'all' or 'top'"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights hash table is %d%% full (%d/%d)"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Consider increasing pg_stat_insights.max or resetting statistics"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Failed to normalize query, storing as-is"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Query may not be grouped with similar queries"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Query text truncated"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Original length: %d bytes, truncated to: %d bytes"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Statistics save disabled"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Statistics will be lost on server shutdown"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Enable pg_stat_insights.save to persist statistics"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "High memory usage detected"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Current usage: %zu MB, limit: %zu MB"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Query tracking overhead is high"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Consider tracking only top queries with pg_stat_insights.track = 'top'"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Statistics file write delayed"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "I/O load is high, statistics may be stale"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Skipping utility command tracking"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Enable pg_stat_insights.track_utility to track all commands"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Planning statistics disabled"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Enable pg_stat_insights.track_planning for query planning metrics"
+msgstr ""
+
+# ============================================================================
+# INFO MESSAGES (PGSI-I001 to I999)
+# ============================================================================
+
+#: pg_stat_insights.c
+msgid "Successfully reset pg_stat_insights statistics"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Cleared %d query entries"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights version %s loaded"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "PostgreSQL %s compatibility"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Statistics loaded from file"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Loaded %d query entries from %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Statistics saved to file"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Saved %d query entries to %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Configuration parameter updated"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Parameter: %s, new value: %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Hash table resized"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Old size: %d, new size: %d"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Statistics collection enabled"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Tracking mode: %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Statistics collection started"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Started at: %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Query entry evicted"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Evicted query ID: %lld, reason: %s"
+msgstr ""
+
+# ============================================================================
+# DEBUG MESSAGES - DEBUG1 (Basic Debugging)
+# ============================================================================
+
+#: pg_stat_insights.c
+msgid "Processing query with queryid %lld"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Normalized query length: %d bytes"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Execution time: %.2f ms"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Query calls incremented to %lld"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Total execution time updated to %.2f ms"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Tracking query for user %u, database %u"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Query tracked in hash table at index %u"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Buffer statistics: hit=%lld, read=%lld"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "WAL statistics: records=%lld, bytes=%lld"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Planning time: %.2f ms"
+msgstr ""
+
+# ============================================================================
+# DEBUG MESSAGES - DEBUG2 (Detailed Debugging)
+# ============================================================================
+
+#: pg_stat_insights.c
+msgid "Hash table entry created for queryid %lld"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Hash table size: %d/%d entries (%.1f%% full)"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Hash collision resolved at index %u"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Hash function computed: %u"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Searching for existing entry with queryid %lld"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Entry found at index %u"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Entry not found, creating new entry"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Updating existing entry at index %u"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Entry update complete, total calls: %lld"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Hash table bucket chain length: %d"
+msgstr ""
+
+# ============================================================================
+# DEBUG MESSAGES - DEBUG3 (Very Detailed)
+# ============================================================================
+
+#: pg_stat_insights.c
+msgid "Allocated %zu bytes for query text"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Shared memory usage: %.2f MB / %.2f MB (%.1f%%)"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Spinlock acquired for entry update"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Spinlock released after %d µs"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "LWLock acquired: %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "LWLock released: %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Memory allocation: %zu bytes at %p"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Memory freed: %zu bytes at %p"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Memcpy: %zu bytes from %p to %p"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "String copy: length %d bytes"
+msgstr ""
+
+# ============================================================================
+# DEBUG MESSAGES - DEBUG4 (Trace Level)
+# ============================================================================
+
+#: pg_stat_insights.c
+msgid "Buffer stats - hit: %lld, read: %lld, dirtied: %lld, written: %lld"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "WAL stats - records: %lld, fpi: %lld, bytes: %lld"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Timing - parse: %.2fms, plan: %.2fms, exec: %.2fms"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Rows returned: %lld, rows affected: %lld"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "JIT stats - functions: %lld, time: %.2fms"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "I/O timing - read: %.2fms, write: %.2fms"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Parallel workers: %d, parallel tuples: %lld"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Cache hit ratio: %.2f%%"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Query fingerprint: %016llx"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Entry age: %d seconds since first execution"
+msgstr ""
+
+# ============================================================================
+# DEBUG MESSAGES - DEBUG5 (Lowest Level)
+# ============================================================================
+
+#: pg_stat_insights.c
+msgid "Acquiring LWLock %s for stats read"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Released LWLock %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Memcpy %zu bytes for normalized query"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Function entry: %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Function exit: %s (duration: %d µs)"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Variable state: %s = %lld"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Pointer dereference: %p -> %lld"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Condition evaluated: %s = %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Loop iteration: %d"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Array access: index %d"
+msgstr ""
+
+# ============================================================================
+# CONFIGURATION MESSAGES
+# ============================================================================
+
+#: pg_stat_insights.c
+msgid "Configuration: pg_stat_insights.max = %d"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Configuration: pg_stat_insights.track = %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Configuration: pg_stat_insights.track_utility = %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Configuration: pg_stat_insights.track_planning = %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Configuration: pg_stat_insights.save = %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Invalid configuration value for %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Value '%s' is not valid, using default '%s'"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Configuration reloaded"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "All parameters validated successfully"
+msgstr ""
+
+# ============================================================================
+# STATEMENT TRACKING MESSAGES
+# ============================================================================
+
+#: pg_stat_insights.c
+msgid "SELECT statement tracked"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "INSERT statement tracked"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "UPDATE statement tracked"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "DELETE statement tracked"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Utility statement tracked: %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "DDL statement tracked: %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Statement skipped: %s"
+msgstr ""
+
+# ============================================================================
+# PERFORMANCE MESSAGES
+# ============================================================================
+
+#: pg_stat_insights.c
+msgid "Performance warning: high execution time"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Query took %.2f ms (threshold: %.2f ms)"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Performance warning: low cache hit ratio"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Cache hit ratio: %.2f%% (threshold: %.2f%%)"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Performance warning: high WAL generation"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "WAL bytes: %lld (threshold: %lld)"
+msgstr ""
+
+# ============================================================================
+# FILE I/O MESSAGES
+# ============================================================================
+
+#: pg_stat_insights.c
+msgid "Loading statistics from file: %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Saving statistics to file: %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Statistics file does not exist: %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Creating new statistics file"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "File read complete: %d bytes"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "File write complete: %d bytes"
+msgstr ""
+
+# ============================================================================
+# SHUTDOWN/STARTUP MESSAGES
+# ============================================================================
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights shutting down"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Cleanup complete"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights starting up"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Initialization phase: %s"
+msgstr ""
+
+#: pg_stat_insights.c
+msgid "Ready to track queries"
+msgstr ""
+
