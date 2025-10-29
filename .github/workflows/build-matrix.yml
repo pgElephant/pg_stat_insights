@@ -292,7 +292,10 @@ jobs:
                 
                 # Map platform to release directory
                 case "$platform" in
-                  ubuntu|rocky)
+                  ubuntu)
+                    release_platform="deb"
+                    ;;
+                  rocky)
                     release_platform="rpm"
                     ;;
                   macos)
