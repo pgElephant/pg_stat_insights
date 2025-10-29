@@ -4,6 +4,10 @@
 > 
 > Monitor slow queries • Track cache efficiency • Analyze WAL generation • Optimize database performance • Real-time metrics • Grafana dashboards
 
+## 🌍 Language Support / 多言語対応 / 多语言支持
+
+**[简体中文](docs/zh_CN/README.md)** | **[繁體中文](docs/zh_TW/README.md)** | **[日本語](docs/ja_JP/README.md)** | **[English](#overview)** (current)
+
 <div align="center">
 
 **Track 52 Metrics Across 11 Views - Monitor PostgreSQL Query Performance in Real-Time**

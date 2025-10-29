@@ -28,6 +28,35 @@ REGRESS = select dml cursors utility level_tracking planning \
 
 TAP_TESTS = 1
 
+# Internationalization support
+GETTEXT_LANGUAGES = zh_CN zh_TW ja_JP
+GETTEXT_TRIGGERS = ereport errmsg errhint errdetail errcontext
+
 PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
+
+# Additional targets for internationalization
+.PHONY: translations translations-install translations-clean translations-stats
+
+translations:
+	@echo "Building translations..."
+	@$(MAKE) -C po all
+
+translations-install: translations
+	@echo "Installing translations..."
+	@$(MAKE) -C po install
+
+translations-clean:
+	@echo "Cleaning translations..."
+	@$(MAKE) -C po clean
+
+translations-stats:
+	@echo "Translation statistics..."
+	@$(MAKE) -C po stats
+
+# Enhanced install target
+install: translations-install
+
+# Enhanced clean target  
+clean: translations-clean

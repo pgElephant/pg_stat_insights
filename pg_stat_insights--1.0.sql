@@ -13,13 +13,13 @@
 -- Reset all statistics
 CREATE FUNCTION pg_stat_insights_reset()
 RETURNS void
-AS 'MODULE_PATHNAME', 'pg_stat_statements_reset'
+AS 'MODULE_PATHNAME', 'pg_stat_insights_reset'
 LANGUAGE C PARALLEL SAFE;
 
 -- Reset specific query statistics
 CREATE FUNCTION pg_stat_insights_reset(IN userid oid, IN dbid oid, IN queryid bigint)
 RETURNS void
-AS 'MODULE_PATHNAME', 'pg_stat_statements_reset_1_7'
+AS 'MODULE_PATHNAME', 'pg_stat_insights_reset_1_7'
 LANGUAGE C PARALLEL SAFE;
 
 -- Main statistics function (matches pg_stat_statements v1.12 output)
@@ -78,7 +78,7 @@ CREATE FUNCTION pg_stat_insights(IN showtext boolean,
     OUT minmax_stats_since timestamp with time zone
 )
 RETURNS SETOF record
-AS 'MODULE_PATHNAME', 'pg_stat_statements_1_12'
+AS 'MODULE_PATHNAME', 'pg_stat_insights_1_12'
 LANGUAGE C STRICT VOLATILE PARALLEL SAFE;
 
 -- Replication stats function

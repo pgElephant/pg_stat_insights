@@ -668,6 +668,12 @@ pgsi_shmem_startup(void)
 							temp.encoding,
 							false);
 
+		if (!entry)
+		{
+			/* Failed to allocate entry - skip this query */
+			continue;
+		}
+
 		/* copy in the actual stats */
 		entry->counters = temp.counters;
 		entry->stats_since = temp.stats_since;
@@ -1404,6 +1410,12 @@ pgsi_store(const char *query, int64 queryId,
 		entry = entry_alloc(&key, query_offset, query_len, encoding,
 							jstate != NULL);
 
+		if (!entry)
+		{
+			/* Failed to allocate entry - release lock and return */
+			goto done;
+		}
+
 		/* If needed, perform garbage collection while exclusive lock held */
 		if (do_gc)
 			gc_qtexts();
@@ -2128,6 +2140,15 @@ entry_alloc(pgsiHashKey *key, Size query_offset, int query_len, int encoding,
 
 	/* Find or create an entry with desired hash code */
 	entry = (pgsiEntry *) hash_search(pgsi_hash, key, HASH_ENTER, &found);
+
+	if (!entry)
+	{
+		/* Out of memory or hash table full - should never happen after entry_dealloc */
+		ereport(WARNING,
+				(errcode(ERRCODE_OUT_OF_MEMORY),
+				 errmsg("pg_stat_insights: out of memory for query entry")));
+		return NULL;
+	}
 
 	if (!found)
 	{
@@ -2896,6 +2917,15 @@ generate_normalized_query(JumbleState *jstate, const char *query,
 		len_to_wrt = off - last_off;
 		len_to_wrt -= last_tok_len;
 		Assert(len_to_wrt >= 0);
+		
+		/* Bounds check before memcpy to prevent buffer overflow */
+		if (n_quer_loc + len_to_wrt > norm_query_buflen)
+		{
+			ereport(WARNING,
+					(errmsg("pg_stat_insights: normalized query buffer overflow, truncating")));
+			goto skip_normalization;
+		}
+		
 		memcpy(norm_query + n_quer_loc, query + quer_loc, len_to_wrt);
 		n_quer_loc += len_to_wrt;
 
@@ -2917,6 +2947,15 @@ generate_normalized_query(JumbleState *jstate, const char *query,
 	len_to_wrt = query_len - quer_loc;
 
 	Assert(len_to_wrt >= 0);
+	
+	/* Final bounds check before last memcpy */
+	if (n_quer_loc + len_to_wrt > norm_query_buflen)
+	{
+		ereport(WARNING,
+				(errmsg("pg_stat_insights: normalized query buffer overflow at end")));
+		goto skip_normalization;
+	}
+	
 	memcpy(norm_query + n_quer_loc, query + quer_loc, len_to_wrt);
 	n_quer_loc += len_to_wrt;
 
@@ -2925,6 +2964,12 @@ generate_normalized_query(JumbleState *jstate, const char *query,
 
 	*query_len_p = n_quer_loc;
 	return norm_query;
+
+skip_normalization:
+	/* Return NULL on buffer overflow - caller should handle this */
+	if (norm_query)
+		pfree(norm_query);
+	return NULL;
 }
 
 /*
