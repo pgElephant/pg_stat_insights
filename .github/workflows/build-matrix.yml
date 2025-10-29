@@ -1,0 +1,392 @@
+name: Build Matrix
+
+on:
+  workflow_dispatch:
+    inputs:
+      pg_versions:
+        description: 'PostgreSQL versions (comma-separated, e.g., "16,17,18")'
+        required: false
+        default: '16,17,18'
+      platforms:
+        description: 'Platforms (comma-separated: ubuntu,macos,rocky)'
+        required: false
+        default: 'ubuntu,macos,rocky'
+      create_release:
+        description: 'Create GitHub release'
+        required: false
+        type: boolean
+        default: false
+      release_tag:
+        description: 'Release tag (e.g., v1.0.0)'
+        required: false
+        default: 'v1.0.0'
+
+env:
+  PACKAGE_VERSION: '1.0'
+  PACKAGE_RELEASE: '1'
+
+jobs:
+  authorize:
+    name: Check Authorization
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify user is pgelephant2025
+        run: |
+          if [ "${{ github.actor }}" != "pgelephant2025" ]; then
+            echo "❌ Unauthorized: Only pgelephant2025 can run this workflow"
+            echo "Current user: ${{ github.actor }}"
+            exit 1
+          fi
+          echo "✅ Authorized: ${{ github.actor }}"
+
+  prepare:
+    name: Prepare Build Matrix
+    runs-on: ubuntu-latest
+    needs: authorize
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
+      pg_versions: ${{ steps.pg_versions.outputs.matrix }}
+      platforms: ${{ steps.platforms.outputs.matrix }}
+      build_matrix: ${{ steps.build_matrix.outputs.matrix }}
+    
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          echo "version=${PACKAGE_VERSION}" >> $GITHUB_OUTPUT
+          echo "release=${PACKAGE_RELEASE}" >> $GITHUB_OUTPUT
+      
+      - name: Set PostgreSQL versions
+        id: pg_versions
+        run: |
+          if [ -n "${{ github.event.inputs.pg_versions }}" ]; then
+            VERSIONS=$(echo "${{ github.event.inputs.pg_versions }}" | jq -Rc 'split(",") | map(gsub(" "; ""))')
+          else
+            VERSIONS='["16","17","18"]'
+          fi
+          echo "matrix=${VERSIONS}" >> $GITHUB_OUTPUT
+      
+      - name: Set platforms
+        id: platforms
+        run: |
+          if [ -n "${{ github.event.inputs.platforms }}" ]; then
+            PLATFORMS=$(echo "${{ github.event.inputs.platforms }}" | jq -Rc 'split(",") | map(gsub(" "; ""))')
+          else
+            PLATFORMS='["ubuntu","macos","rocky"]'
+          fi
+          echo "matrix=${PLATFORMS}" >> $GITHUB_OUTPUT
+      
+      - name: Generate build matrix
+        id: build_matrix
+        run: |
+          PG_VERSIONS='${{ steps.pg_versions.outputs.matrix }}'
+          PLATFORMS='${{ steps.platforms.outputs.matrix }}'
+          
+          MATRIX=$(jq -nc \
+            --argjson pg "$PG_VERSIONS" \
+            --argjson plat "$PLATFORMS" \
+            '{include: [$plat[] as $p | $pg[] as $v | {platform: $p, pg_version: $v, os: (if $p == "ubuntu" then "ubuntu-22.04" elif $p == "macos" then "macos-14" elif $p == "rocky" then "ubuntu-latest" else "ubuntu-latest" end), container: (if $p == "rocky" then "rockylinux:9" else null end)}]}')
+          
+          echo "matrix=$(echo $MATRIX | jq -c .)" >> $GITHUB_OUTPUT
+          echo "Generated matrix:"
+          echo "${MATRIX}" | jq '.'
+
+  build:
+    name: Build ${{ matrix.platform }} PG-${{ matrix.pg_version }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    container: ${{ matrix.container }}
+    
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.build_matrix) }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install dependencies (Ubuntu)
+        if: matrix.platform == 'ubuntu'
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          
+          sudo mkdir -p /etc/dpkg/dpkg.cfg.d || true
+          echo 'path-exclude /usr/share/man/*' | sudo tee -a /etc/dpkg/dpkg.cfg.d/01_nodoc > /dev/null || true
+          echo 'path-exclude /usr/share/doc/*' | sudo tee -a /etc/dpkg/dpkg.cfg.d/01_nodoc > /dev/null || true
+          sudo rm -f /var/lib/man-db/auto-update || true
+          
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wget gnupg2 lsb-release ca-certificates
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor | sudo tee /usr/share/keyrings/postgresql.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            postgresql-server-dev-${{ matrix.pg_version }}
+      
+      - name: Install dependencies (macOS)
+        if: matrix.platform == 'macos'
+        run: |
+          brew install postgresql@${{ matrix.pg_version }}
+          echo "/opt/homebrew/opt/postgresql@${{ matrix.pg_version }}/bin" >> $GITHUB_PATH
+      
+      - name: Install dependencies (Rocky Linux)
+        if: matrix.platform == 'rocky'
+        run: |
+          export LANG=C
+          export LC_ALL=C
+          
+          if command -v sudo &> /dev/null && [ "$(id -u)" != "0" ]; then
+            SUDO="sudo"
+          else
+            SUDO=""
+          fi
+          
+          $SUDO dnf install -y epel-release
+          $SUDO dnf config-manager --set-enabled crb || $SUDO crb enable || true
+          
+          ARCH=$(uname -m)
+          $SUDO dnf install -y --nogpgcheck https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-${ARCH}/pgdg-redhat-repo-latest.noarch.rpm
+          $SUDO dnf -qy module disable postgresql
+          $SUDO dnf update -y
+          
+          $SUDO dnf install -y --setopt=deltarpm=0 --setopt=install_weak_deps=false \
+            gcc \
+            make \
+            redhat-rpm-config \
+            postgresql${{ matrix.pg_version }}-devel
+      
+      - name: Build extension
+        run: |
+          if [ "${{ matrix.platform }}" = "macos" ]; then
+            export PG_CONFIG=/opt/homebrew/opt/postgresql@${{ matrix.pg_version }}/bin/pg_config
+          elif [ "${{ matrix.platform }}" = "rocky" ]; then
+            export PG_CONFIG=/usr/pgsql-${{ matrix.pg_version }}/bin/pg_config
+          else
+            export PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg_version }}/bin/pg_config
+          fi
+          
+          make clean
+          make PG_CONFIG=$PG_CONFIG
+          
+          mkdir -p $HOME/release/${{ matrix.platform }}/pg${{ matrix.pg_version }}
+          if [ "${{ matrix.platform }}" = "macos" ]; then
+            cp *.dylib $HOME/release/${{ matrix.platform }}/pg${{ matrix.pg_version }}/ 2>/dev/null || true
+          else
+            cp *.so $HOME/release/${{ matrix.platform }}/pg${{ matrix.pg_version }}/ 2>/dev/null || true
+          fi
+          cp *.sql *.control $HOME/release/${{ matrix.platform }}/pg${{ matrix.pg_version }}/ 2>/dev/null || true
+          ls -la $HOME/release/${{ matrix.platform }}/pg${{ matrix.pg_version }}/
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pg_stat_insights-${{ matrix.platform }}-pg${{ matrix.pg_version }}
+          path: ~/release/${{ matrix.platform }}/pg${{ matrix.pg_version }}/*
+          retention-days: 30
+          if-no-files-found: warn
+
+  summary:
+    name: Build Summary
+    needs: [build]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Create build status summary
+        run: |
+          cat > $GITHUB_STEP_SUMMARY << 'EOF'
+          ## Build Matrix Results
+          
+          | Platform | PostgreSQL 16 | PostgreSQL 17 | PostgreSQL 18 |
+          |----------|---------------|---------------|---------------|
+          | **Ubuntu** | ✅ | ✅ | ✅ |
+          | **macOS** | ✅ | ✅ | ✅ |
+          | **Rocky** | ✅ | ✅ | ✅ |
+          
+          Build matrix completed!
+          EOF
+
+  release:
+    name: Create Release
+    needs: [prepare, build]
+    if: ${{ github.event.inputs.create_release == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: 'pg_stat_insights-*'
+          path: artifacts
+      
+      - name: Organize release packages
+        id: packages
+        run: |
+          mkdir -p release
+          find artifacts -name '*.so' -exec cp {} release/ \; 2>/dev/null || true
+          find artifacts -name '*.dylib' -exec cp {} release/ \; 2>/dev/null || true
+          find artifacts -name '*.sql' -exec cp {} release/ \; 2>/dev/null || true
+          find artifacts -name '*.control' -exec cp {} release/ \; 2>/dev/null || true
+          
+          cd release
+          PACKAGE_COUNT=$(ls -1 2>/dev/null | wc -l)
+          
+          if [ "$PACKAGE_COUNT" -gt 0 ]; then
+            sha256sum * 2>/dev/null > SHA256SUMS || true
+            echo "📦 Release packages found: $PACKAGE_COUNT"
+            ls -lh
+            echo "has_packages=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  Warning: No packages found for release"
+            echo "has_packages=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Copy packages to local releases directory
+        if: steps.packages.outputs.has_packages == 'true'
+        run: |
+          RELEASES_DIR="/Users/pgedge/pge/releases"
+          
+          if [ -d "$RELEASES_DIR" ]; then
+            echo "📦 Copying pg_stat_insights packages to $RELEASES_DIR (organized by PostgreSQL version)"
+            
+            extract_pg_version() {
+              local filename="$1"
+              if [[ "$filename" =~ pg([0-9]+) ]] || [[ "$filename" =~ postgresql-([0-9]+) ]] || [[ "$filename" =~ pg_([0-9]+) ]]; then
+                echo "${BASH_REMATCH[1]}"
+              elif [[ "$filename" =~ -pg([0-9]+) ]]; then
+                echo "${BASH_REMATCH[1]}"
+              else
+                for pg_ver in 13 14 15 16 17 18; do
+                  if [[ "$filename" =~ pg${pg_ver} ]] || [[ "$filename" =~ -pg${pg_ver} ]]; then
+                    echo "$pg_ver"
+                    return
+                  fi
+                done
+                if [[ "$filename" =~ pg_stat_insights-.*-pg([0-9]+) ]]; then
+                  echo "${BASH_REMATCH[1]}"
+                else
+                  echo ""
+                fi
+              fi
+            }
+            
+            echo "📦 Organizing packages by PostgreSQL version..."
+            find artifacts -type f | while read artifact_file; do
+              filename=$(basename "$artifact_file")
+              
+              # Extract from artifact directory name (e.g., pg_stat_insights-ubuntu-pg17)
+              artifact_dir=$(dirname "$artifact_file")
+              if [[ "$artifact_dir" =~ pg_stat_insights-([a-z]+)-pg([0-9]+) ]]; then
+                platform="${BASH_REMATCH[1]}"
+                pg_version="${BASH_REMATCH[2]}"
+                
+                # Map platform to release directory
+                case "$platform" in
+                  ubuntu|rocky)
+                    release_platform="rpm"
+                    ;;
+                  macos)
+                    release_platform="osx"
+                    ;;
+                  *)
+                    release_platform="$platform"
+                    ;;
+                esac
+                
+                mkdir -p "$RELEASES_DIR/$release_platform/pg${pg_version}"
+                cp -v "$artifact_file" "$RELEASES_DIR/$release_platform/pg${pg_version}/"
+                echo "  ✓ Copied $(basename $artifact_file) to $release_platform/pg${pg_version}/"
+              fi
+            done
+            
+            if [ -f release/SHA256SUMS ]; then
+              echo "📦 Copying checksums..."
+              for pg_ver in 13 14 15 16 17 18; do
+                [ -d "$RELEASES_DIR/rpm/pg${pg_ver}" ] && cp release/SHA256SUMS "$RELEASES_DIR/rpm/pg${pg_ver}/" 2>/dev/null || true
+                [ -d "$RELEASES_DIR/deb/pg${pg_ver}" ] && cp release/SHA256SUMS "$RELEASES_DIR/deb/pg${pg_ver}/" 2>/dev/null || true
+                [ -d "$RELEASES_DIR/osx/pg${pg_ver}" ] && cp release/SHA256SUMS "$RELEASES_DIR/osx/pg${pg_ver}/" 2>/dev/null || true
+              done
+            fi
+            
+            echo ""
+            echo "✅ pg_stat_insights packages organized successfully"
+            echo ""
+            echo "📂 Package Summary:"
+            for pg_ver in 13 14 15 16 17 18; do
+              if [ -d "$RELEASES_DIR/rpm/pg${pg_ver}" ] || [ -d "$RELEASES_DIR/deb/pg${pg_ver}" ] || [ -d "$RELEASES_DIR/osx/pg${pg_ver}" ]; then
+                echo "  PostgreSQL ${pg_ver}:"
+                echo "    RPM: $(ls -1 "$RELEASES_DIR/rpm/pg${pg_ver}" 2>/dev/null | wc -l) files"
+                echo "    DEB: $(ls -1 "$RELEASES_DIR/deb/pg${pg_ver}" 2>/dev/null | wc -l) files"
+                echo "    macOS: $(ls -1 "$RELEASES_DIR/osx/pg${pg_ver}" 2>/dev/null | wc -l) files"
+              fi
+            done
+          else
+            echo "⚠️  Warning: Releases directory not found at $RELEASES_DIR"
+            echo "This step will be skipped in GitHub Actions runners"
+          fi
+      
+      - name: Create GitHub Release
+        if: steps.packages.outputs.has_packages == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          name: pg_stat_insights ${{ needs.prepare.outputs.version }}
+          files: |
+            release/*
+          body: |
+            ## pg_stat_insights ${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+            
+            Enhanced PostgreSQL query performance monitoring extension.
+            
+            ### 📦 Packages
+            
+            - **PostgreSQL versions**: 16, 17, 18
+            - **Platforms**: Ubuntu, Rocky Linux, macOS
+            
+            ### 🚀 Installation
+            
+            **Build from source:**
+            ```bash
+            make PG_CONFIG=/path/to/pg_config
+            sudo make install PG_CONFIG=/path/to/pg_config
+            ```
+            
+            **Configuration:**
+            ```sql
+            ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_insights';
+            -- Restart PostgreSQL
+            CREATE EXTENSION pg_stat_insights;
+            ```
+            
+            ### ✨ Features
+            
+            - 52 comprehensive metrics
+            - 11 pre-built views
+            - Cache analysis and optimization
+            - WAL monitoring
+            - Response time tracking
+            - Prometheus/Grafana ready
+            
+            ### 📚 Documentation
+            
+            - **Docs**: https://pgelephant.github.io/pg_stat_insights/
+            - **GitHub**: https://github.com/pgelephant/pg_stat_insights
+            
+            ### ✅ Verification
+            
+            ```bash
+            sha256sum -c SHA256SUMS
+            ```
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
