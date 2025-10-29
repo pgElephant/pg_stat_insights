@@ -327,6 +327,7 @@ PG_FUNCTION_INFO_V1(pg_stat_insights_1_13);
 PG_FUNCTION_INFO_V1(pg_stat_insights);
 PG_FUNCTION_INFO_V1(pg_stat_insights_info);
 
+
 static void pgsi_shmem_request(void);
 static void pgsi_shmem_startup(void);
 static void pgsi_shmem_shutdown(int code, Datum arg);
