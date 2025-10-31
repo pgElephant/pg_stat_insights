@@ -2,7 +2,7 @@ name: Deploy Documentation
 
 on:
   workflow_dispatch:
-  # Automatic triggers disabled - run manually only
+  # Automatic triggers disabled - manual trigger only
   # push:
   #   branches:
   #     - main
@@ -11,6 +11,8 @@ on:
   #     - 'mkdocs.yml'
   #     - 'docs-requirements.txt'
   #     - '.github/workflows/docs.yml'
+  #     - 'README.md'
+  #     - 'CHANGELOG.md'
 
 permissions:
   contents: write

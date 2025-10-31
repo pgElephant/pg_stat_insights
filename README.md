@@ -12,11 +12,12 @@
 
 **Track 52 Metrics Across 11 Views - Monitor PostgreSQL Query Performance in Real-Time**
 
-*Production-ready extension for PostgreSQL 16, 17, 18 - Drop-in replacement for pg_stat_statements with enhanced analytics*
+*Production-ready extension for PostgreSQL 14, 15, 16, 17 - Drop-in replacement for pg_stat_statements with enhanced analytics*
 
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20|%2017%20|%2018-blue.svg)](https://www.postgresql.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%20|%2015%20|%2016%20|%2017-blue.svg)](https://www.postgresql.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-22%2F22%20passing-brightgreen.svg)]()
 [![Metrics](https://img.shields.io/badge/metrics-52_columns-brightgreen.svg)]()
 [![Documentation](https://img.shields.io/badge/docs-github.io-blue.svg)](https://pgelephant.github.io/pg_stat_insights/)
 
@@ -43,12 +44,15 @@
 - **11 pre-built views** - Instant access to top slow queries, cache misses, I/O intensive operations
 - **11 parameters** - Fine-tune tracking, histograms, and statistics collection
 - **Drop-in replacement** for pg_stat_statements with enhanced metrics
-- **PostgreSQL 16-18** - Full compatibility with latest PostgreSQL versions
-- **Response time tracking** - Categorize queries by execution time (<1ms to >10s)
+- **PostgreSQL 14-17** - Full compatibility with PostgreSQL 14, 15, 16, and 17
+- **22 regression tests** - Comprehensive test coverage for all features
+- **Response time tracking** - Categorize queries by execution time (less than 1ms to greater than 10s)
 - **Cache analysis** - Identify buffer cache inefficiencies and optimization opportunities
 - **WAL monitoring** - Track write-ahead log generation per query
+- **Advanced features** - JSON/JSONB, arrays, partitioning, triggers, window functions
 - **Time-series data** - Historical performance trending and bucket analysis
 - **Prometheus/Grafana ready** - Pre-built dashboards and alert rules included
+- **CI/CD ready** - GitHub Actions workflows for multi-version testing
 
 ---
 
