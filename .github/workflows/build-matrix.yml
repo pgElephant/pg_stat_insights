@@ -173,6 +173,7 @@ jobs:
             gcc \
             make \
             redhat-rpm-config \
+            postgresql${{ matrix.pg_version }}-server \
             postgresql${{ matrix.pg_version }}-devel
       
       - name: Build extension
