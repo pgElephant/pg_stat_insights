@@ -12,7 +12,7 @@
 - [WAL Monitoring](#wal-monitoring)
 - [Query Tuning](#query-tuning)
 - [Trend Analysis](#trend-analysis)
-- [Alerting & Monitoring](#alerting--monitoring)
+- [Alerting & Monitoring](#alerting-monitoring)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -636,7 +636,7 @@ ORDER BY hour DESC;
 
 ---
 
-## Alerting & Monitoring
+## Alerting Monitoring
 
 ### Create Performance Dashboard
 

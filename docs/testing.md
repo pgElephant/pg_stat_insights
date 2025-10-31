@@ -281,7 +281,7 @@ When contributing new tests:
 4. Test on all supported PostgreSQL versions
 5. Document in this file
 
-For detailed contribution guidelines, see [CONTRIBUTING.md](../CONTRIBUTING.md).
+For detailed contribution guidelines, see [Contributing Guide](contributing.md).
 
 ## Resources
 

@@ -6,7 +6,7 @@
 
 ## 言語サポート / Language Support / 多语言支持
 
-**[日本語](#概要)** (現在) | **[简体中文](../zh_CN/README.md)** | **[繁體中文](../zh_TW/README.md)** | **[English](../../README.md)**
+**[日本語](#pg_stat_insights-postgresql-パフォーマンス監視拡張機能)** (現在) | **[简体中文](../zh_CN/README.md)** | **[繁體中文](../zh_TW/README.md)** | **[English](../index.md)**
 
 <div align="center">
 
@@ -15,7 +15,7 @@
 *PostgreSQL 16、17、18 向けのプロダクション対応拡張機能 - 強化された分析機能を持つ pg_stat_statements の代替品*
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20|%2017%20|%2018-blue.svg)](https://www.postgresql.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/pgelephant/pg_stat_insights/blob/main/LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
 [![Metrics](https://img.shields.io/badge/metrics-52_columns-brightgreen.svg)]()
 [![Documentation](https://img.shields.io/badge/docs-github.io-blue.svg)](https://pgelephant.github.io/pg_stat_insights/)

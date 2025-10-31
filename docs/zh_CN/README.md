@@ -6,7 +6,7 @@
 
 ## 语言支持 / Language Support / 多言語対応
 
-**[简体中文](#概述)** (当前) | **[繁體中文](../zh_TW/README.md)** | **[日本語](../ja_JP/README.md)** | **[English](../../README.md)**
+**[简体中文](#pg_stat_insights-postgresql-性能监控扩展)** (当前) | **[繁體中文](../zh_TW/README.md)** | **[日本語](../ja_JP/README.md)** | **[English](../index.md)**
 
 <div align="center">
 
@@ -15,7 +15,7 @@
 *适用于 PostgreSQL 16、17、18 的生产就绪扩展 - pg_stat_statements 的增强型替代品*
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20|%2017%20|%2018-blue.svg)](https://www.postgresql.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/pgelephant/pg_stat_insights/blob/main/LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
 [![Metrics](https://img.shields.io/badge/metrics-52_columns-brightgreen.svg)]()
 [![Documentation](https://img.shields.io/badge/docs-github.io-blue.svg)](https://pgelephant.github.io/pg_stat_insights/)
