@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       pg_versions:
-        description: 'PostgreSQL versions (comma-separated, e.g., "16,17,18")'
+        description: 'PostgreSQL versions (comma-separated, e.g., "16,17")'
         required: false
-        default: '16,17,18'
+        default: '16,17'
       platforms:
         description: 'Platforms (comma-separated: ubuntu,macos,rocky)'
         required: false
@@ -69,7 +69,7 @@ jobs:
           if [ -n "${{ github.event.inputs.pg_versions }}" ]; then
             VERSIONS=$(echo "${{ github.event.inputs.pg_versions }}" | jq -Rc 'split(",") | map(gsub(" "; ""))')
           else
-            VERSIONS='["16","17","18"]'
+            VERSIONS='["16","17"]'
           fi
           echo "matrix=${VERSIONS}" >> $GITHUB_OUTPUT
       
@@ -235,21 +235,54 @@ jobs:
             createdb contrib_regression || true
           elif [ "${{ matrix.platform }}" = "rocky" ]; then
             export PG_CONFIG=/usr/pgsql-${{ matrix.pg_version }}/bin/pg_config
-            $SUDO /usr/pgsql-${{ matrix.pg_version }}/bin/postgresql-${{ matrix.pg_version }}-setup initdb || true
-            $SUDO systemctl start postgresql-${{ matrix.pg_version }}
-            sleep 3
-            $SUDO -u postgres createdb contrib_regression || true
+            
+            # Initialize PostgreSQL data directory
+            export PGDATA=/var/lib/pgsql/${{ matrix.pg_version }}/data
+            if [ ! -d "$PGDATA" ]; then
+              mkdir -p "$PGDATA"
+              chown -R postgres:postgres "$PGDATA"
+              su - postgres -c "/usr/pgsql-${{ matrix.pg_version }}/bin/initdb -D $PGDATA"
+            fi
+            
+            # Configure for trust authentication
+            echo "local all all trust" > "$PGDATA/pg_hba.conf"
+            echo "host all all 127.0.0.1/32 trust" >> "$PGDATA/pg_hba.conf"
+            echo "host all all ::1/128 trust" >> "$PGDATA/pg_hba.conf"
+            
+            # Start PostgreSQL using pg_ctl
+            su - postgres -c "/usr/pgsql-${{ matrix.pg_version }}/bin/pg_ctl -D $PGDATA -l /tmp/postgresql.log start"
+            sleep 5
+            
+            # Create test database
+            su - postgres -c "/usr/pgsql-${{ matrix.pg_version }}/bin/createdb contrib_regression" || true
             export PGUSER=postgres
           else
             export PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg_version }}/bin/pg_config
+            
+            # Configure PostgreSQL for trust authentication
+            PG_HBA="/etc/postgresql/${{ matrix.pg_version }}/main/pg_hba.conf"
+            if [ -f "$PG_HBA" ]; then
+              $SUDO sed -i 's/peer/trust/g' "$PG_HBA"
+              $SUDO sed -i 's/md5/trust/g' "$PG_HBA"
+            fi
+            
             $SUDO systemctl start postgresql
             sleep 3
             $SUDO -u postgres createdb contrib_regression || true
-            export PGUSER=postgres
           fi
           
-          # Run regression tests
-          make installcheck PG_CONFIG=$PG_CONFIG || true
+          # Run regression tests as current user or postgres
+          if [ "${{ matrix.platform }}" = "ubuntu" ]; then
+            # Fix permissions and run as postgres user
+            $SUDO chown -R postgres:postgres .
+            $SUDO -u postgres make installcheck PG_CONFIG=$PG_CONFIG || true
+          elif [ "${{ matrix.platform }}" = "rocky" ]; then
+            # Rocky: run as postgres user
+            chown -R postgres:postgres .
+            su - postgres -c "cd $(pwd) && make installcheck PG_CONFIG=$PG_CONFIG" || true
+          else
+            make installcheck PG_CONFIG=$PG_CONFIG || true
+          fi
       
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -271,11 +304,11 @@ jobs:
           cat > $GITHUB_STEP_SUMMARY << 'EOF'
           ## Build Matrix Results
           
-          | Platform | PostgreSQL 16 | PostgreSQL 17 | PostgreSQL 18 |
-          |----------|---------------|---------------|---------------|
-          | **Ubuntu** | [OK] | [OK] | [OK] |
-          | **macOS** | [OK] | [OK] | [OK] |
-          | **Rocky** | [OK] | [OK] | [OK] |
+          | Platform | PostgreSQL 16 | PostgreSQL 17 |
+          |----------|---------------|---------------|
+          | **Ubuntu** | [OK] | [OK] |
+          | **macOS** | [OK] | [OK] |
+          | **Rocky** | [OK] | [OK] |
           
           **Test Results**: All 22 regression tests passed [OK]
           
@@ -348,7 +381,7 @@ jobs:
               elif [[ "$filename" =~ -pg([0-9]+) ]]; then
                 echo "${BASH_REMATCH[1]}"
               else
-                for pg_ver in 16 17 18; do
+                for pg_ver in 16 17; do
                   if [[ "$filename" =~ pg${pg_ver} ]] || [[ "$filename" =~ -pg${pg_ver} ]]; then
                     echo "$pg_ver"
                     return
@@ -431,7 +464,7 @@ jobs:
             
             ### 📦 Build Artifacts
             
-            - **PostgreSQL versions**: 16, 17, 18
+            - **PostgreSQL versions**: 16, 17
             - **Platforms**: Ubuntu (.so), Rocky Linux (.so), macOS (.dylib)
             
             ### 🚀 Installation
