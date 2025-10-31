@@ -6,7 +6,7 @@
 
 ## 語言支援 / Language Support / 多言語対応
 
-**[繁體中文](#概述)** (目前) | **[简体中文](../zh_CN/README.md)** | **[日本語](../ja_JP/README.md)** | **[English](../../README.md)**
+**[繁體中文](#pg_stat_insights-postgresql-性能監控擴展)** (目前) | **[简体中文](../zh_CN/README.md)** | **[日本語](../ja_JP/README.md)** | **[English](../index.md)**
 
 <div align="center">
 
