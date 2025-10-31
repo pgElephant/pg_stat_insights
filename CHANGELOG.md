@@ -18,11 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Test 20: Advanced window functions (ROW_NUMBER, RANK, LAG, LEAD, aggregates)
   - Test 21: Transaction handling (COMMIT, ROLLBACK, savepoints)
   - Test 22: Query normalization (parameterization with different literals)
-- **PostgreSQL 14-17 Compatibility** - Added version detection for queryjumble.h include path
-  - PostgreSQL 14-16: uses `utils/queryjumble.h`
-  - PostgreSQL 17+: uses `nodes/queryjumble.h`
+- **PostgreSQL 16-18 Compatibility** - Added version detection for queryjumble.h include path
+  - PostgreSQL 14: uses `utils/queryjumble.h`
+  - PostgreSQL 15+: uses `nodes/queryjumble.h`
 - **GitHub Actions Workflows**
-  - Build matrix workflow for PostgreSQL 14, 15, 16, 17 across Ubuntu, macOS, Rocky Linux
+  - Build matrix workflow for PostgreSQL 16, 17, 18 across Ubuntu, macOS, Rocky Linux
   - Documentation deployment workflow to GitHub Pages
   - DEB package generation (Ubuntu/Debian)
   - RPM package generation (RHEL/Rocky/AlmaLinux)

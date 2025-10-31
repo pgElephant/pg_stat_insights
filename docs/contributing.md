@@ -289,7 +289,7 @@ Brief description of changes
 ## Testing
 - [ ] All 22 regression tests pass
 - [ ] Added new tests for new functionality
-- [ ] Tested on PostgreSQL 14, 15, 16, 17
+- [ ] Tested on PostgreSQL 16, 17, 18
 - [ ] No compiler warnings
 - [ ] No memory leaks
 
@@ -374,14 +374,6 @@ cp results/14_prepared_statements.out expected/
 Test on all supported versions:
 
 ```bash
-# PostgreSQL 14
-export PG_CONFIG=/usr/lib/postgresql/14/bin/pg_config
-make clean && make && make installcheck
-
-# PostgreSQL 15
-export PG_CONFIG=/usr/lib/postgresql/15/bin/pg_config
-make clean && make && make installcheck
-
 # PostgreSQL 16
 export PG_CONFIG=/usr/lib/postgresql/16/bin/pg_config
 make clean && make && make installcheck

@@ -6,7 +6,7 @@ Get started with pg_stat_insights in **5 minutes** and start monitoring your Pos
 
 ## Prerequisites
 
-- PostgreSQL 14, 15, 16, or 17 installed
+- PostgreSQL 16, 17, or 18 installed
 - Superuser access to PostgreSQL
 - Extension installed (see [Installation Guide](installation.md))
 

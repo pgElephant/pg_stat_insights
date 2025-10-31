@@ -6,7 +6,7 @@ pg_stat_insights includes a comprehensive test suite with 22 regression tests co
 
 The test suite validates:
 - [OK] **22 test cases** covering all functionality
-- [OK] **PostgreSQL 14-17 compatibility**
+- [OK] **PostgreSQL 16-18 compatibility**
 - [OK] **Deterministic results** with ORDER BY and fixed timestamps
 - [OK] **All 52 metrics** tracked and validated
 - [OK] **All 11 views** functionality verified

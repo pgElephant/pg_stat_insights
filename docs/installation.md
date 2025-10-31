@@ -8,7 +8,7 @@ Complete installation guide for pg_stat_insights on all supported platforms and 
 
 ### System Requirements
 
-- **PostgreSQL**: Version 14, 15, 16, or 17
+- **PostgreSQL**: Version 16, 17, or 18
 - **Operating System**: Linux (Ubuntu/Debian/RHEL/Rocky), macOS, Windows (WSL)
 - **Memory**: Minimum 100MB shared memory for extension
 - **Disk**: ~5MB for extension files
@@ -557,10 +557,9 @@ psql postgres -c "CREATE EXTENSION pg_stat_insights;"
 
 | PostgreSQL | Ubuntu 22.04 | Ubuntu 24.04 | Debian 11 | Debian 12 | Rocky 9 | macOS |
 |------------|--------------|--------------|-----------|-----------|---------|-------|
-| **14** | [OK] | [OK] | [OK] | [OK] | [OK] | [OK] |
-| **15** | [OK] | [OK] | [OK] | [OK] | [OK] | [OK] |
 | **16** | [OK] | [OK] | [OK] | [OK] | [OK] | [OK] |
 | **17** | [OK] | [OK] | [OK] | [OK] | [OK] | [OK] |
+| **18** | [OK] | [OK] | [OK] | [OK] | [OK] | [OK] |
 
-All combinations tested in CI/CD pipeline. [OK]
+All combinations tested in CI/CD pipeline.
 

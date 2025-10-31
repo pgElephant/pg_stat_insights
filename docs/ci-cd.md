@@ -12,7 +12,7 @@ Builds and tests pg_stat_insights across multiple PostgreSQL versions and platfo
 
 #### Features
 
-- [OK] **Multi-version support**: PostgreSQL 14, 15, 16, 17
+- [OK] **Multi-version support**: PostgreSQL 16, 17, 18
 - [OK] **Multi-platform**: Ubuntu, macOS, Rocky Linux
 - [OK] **Automated testing**: Runs all 22 regression tests
 - [OK] **Package generation**: DEB and RPM packages
@@ -28,7 +28,7 @@ on:
     inputs:
       pg_versions:
         description: 'PostgreSQL versions (comma-separated)'
-        default: '14,15,16,17'
+        default: '16,17,18'
       platforms:
         description: 'Platforms (ubuntu,macos,rocky)'
         default: 'ubuntu,macos,rocky'
@@ -40,11 +40,11 @@ on:
 
 #### Build Matrix
 
-| Platform | PostgreSQL 14 | PostgreSQL 15 | PostgreSQL 16 | PostgreSQL 17 |
-|----------|---------------|---------------|---------------|---------------|
-| **Ubuntu 22.04** | [OK] | [OK] | [OK] | [OK] |
-| **macOS 14** | [OK] | [OK] | [OK] | [OK] |
-| **Rocky Linux 9** | [OK] | [OK] | [OK] | [OK] |
+| Platform | PostgreSQL 16 | PostgreSQL 17 | PostgreSQL 18 |
+|----------|---------------|---------------|---------------|
+| **Ubuntu 22.04** | [OK] | [OK] | [OK] |
+| **macOS 14** | [OK] | [OK] | [OK] |
+| **Rocky Linux 9** | [OK] | [OK] | [OK] |
 
 #### Jobs
 
@@ -240,14 +240,6 @@ sudo dnf install -y \
 ### Test Against Multiple Versions
 
 ```bash
-# PostgreSQL 14
-export PG_CONFIG=/usr/lib/postgresql/14/bin/pg_config
-make clean && make && make installcheck
-
-# PostgreSQL 15
-export PG_CONFIG=/usr/lib/postgresql/15/bin/pg_config
-make clean && make && make installcheck
-
 # PostgreSQL 16
 export PG_CONFIG=/usr/lib/postgresql/16/bin/pg_config
 make clean && make && make installcheck
@@ -260,13 +252,6 @@ make clean && make && make installcheck
 ### Docker Testing
 
 ```bash
-# PostgreSQL 14
-docker run --rm -v $(pwd):/build -w /build \
-  postgres:14 bash -c "\
-  apt-get update && \
-  apt-get install -y build-essential postgresql-server-dev-14 && \
-  make clean && make && make installcheck"
-
 # PostgreSQL 17
 docker run --rm -v $(pwd):/build -w /build \
   postgres:17 bash -c "\

@@ -77,11 +77,11 @@ translations:
 	fi
 
 translations-install:
-	@if [ -d po ]; then \
+	@if [ -d po ] && command -v msgfmt >/dev/null 2>&1; then \
 		echo "Installing translations..."; \
 		$(MAKE) -C po install; \
 	else \
-		echo "Skipping translations installation (po directory not found)"; \
+		echo "Skipping translations installation (msgfmt not found or po directory missing)"; \
 	fi
 
 translations-clean:

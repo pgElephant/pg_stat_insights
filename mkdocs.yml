@@ -1,5 +1,5 @@
 site_name: pg_stat_insights - PostgreSQL Performance Monitoring
-site_description: Production-ready PostgreSQL extension for query performance monitoring, SQL optimization, and database analytics. Track 52 metrics across 11 views with comprehensive test coverage. Compatible with PostgreSQL 14-17.
+site_description: Production-ready PostgreSQL extension for query performance monitoring, SQL optimization, and database analytics. Track 52 metrics across 11 views with comprehensive test coverage. Compatible with PostgreSQL 16-18.
 site_author: pgelephant
 site_url: https://pgelephant.github.io/pg_stat_insights/
 

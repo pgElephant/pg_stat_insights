@@ -28,7 +28,7 @@
 - **11 pre-built views** - Instant access to top slow queries, cache misses, I/O intensive operations
 - **11 parameters** - Fine-tune tracking, histograms, and statistics collection
 - **Drop-in replacement** for pg_stat_statements with enhanced metrics
-- **PostgreSQL 14-17** - Full compatibility with PostgreSQL 14, 15, 16, and 17
+- **PostgreSQL 16-18** - Full compatibility with PostgreSQL 16, 17, and 18
 - **22 regression tests** - Comprehensive test coverage for all features
 - **Response time tracking** - Categorize queries by execution time (<1ms to >10s)
 - **Cache analysis** - Identify buffer cache inefficiencies and optimization opportunities
@@ -130,7 +130,7 @@ ORDER BY wal_bytes DESC;
 ### Version 1.1 (Unreleased)
 
 - **Enhanced test suite**: 22 comprehensive regression tests (was 13)
-- **PostgreSQL 14-17 support**: Full compatibility across versions
+- **PostgreSQL 16-18 support**: Full compatibility across versions
 - **New test coverage**: Prepared statements, complex joins, JSON/JSONB, arrays, partitioning, triggers, window functions, transactions
 - **GitHub Actions**: Build matrix and documentation deployment workflows
 - **Deterministic tests**: ORDER BY clauses and fixed timestamps

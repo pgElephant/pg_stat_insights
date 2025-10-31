@@ -337,16 +337,16 @@ brew install postgresql@17
 
 **Error: "fatal error: 'nodes/queryjumble.h' file not found"**
 
-**Cause**: Building for PostgreSQL 14-16 but code expects PG 17 include path
+**Cause**: Building for PostgreSQL 14 but code expects PG 15+ include path
 
 **Solution:**
 
 This is automatically handled in code:
 ```c
-#if PG_VERSION_NUM >= 170000
-#include "nodes/queryjumble.h"
+#if PG_VERSION_NUM >= 150000
+#include "nodes/queryjumble.h"  // PostgreSQL 15+
 #else
-#include "utils/queryjumble.h"
+#include "utils/queryjumble.h"  // PostgreSQL 14
 #endif
 ```
 

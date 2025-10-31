@@ -12,9 +12,9 @@
 
 **Track 52 Metrics Across 11 Views - Monitor PostgreSQL Query Performance in Real-Time**
 
-*Production-ready extension for PostgreSQL 14, 15, 16, 17 - Drop-in replacement for pg_stat_statements with enhanced analytics*
+*Production-ready extension for PostgreSQL 16, 17, 18 - Drop-in replacement for pg_stat_statements with enhanced analytics*
 
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%20|%2015%20|%2016%20|%2017-blue.svg)](https://www.postgresql.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20|%2017%20|%2018-blue.svg)](https://www.postgresql.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
 [![Tests](https://img.shields.io/badge/tests-22%2F22%20passing-brightgreen.svg)]()
@@ -44,7 +44,7 @@
 - **11 pre-built views** - Instant access to top slow queries, cache misses, I/O intensive operations
 - **11 parameters** - Fine-tune tracking, histograms, and statistics collection
 - **Drop-in replacement** for pg_stat_statements with enhanced metrics
-- **PostgreSQL 14-17** - Full compatibility with PostgreSQL 14, 15, 16, and 17
+- **PostgreSQL 16-18** - Full compatibility with PostgreSQL 16, 17, and 18
 - **22 regression tests** - Comprehensive test coverage for all features
 - **Response time tracking** - Categorize queries by execution time (less than 1ms to greater than 10s)
 - **Cache analysis** - Identify buffer cache inefficiencies and optimization opportunities

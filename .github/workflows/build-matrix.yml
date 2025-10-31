@@ -135,7 +135,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential \
-            postgresql-server-dev-${{ matrix.pg_version }}
+            postgresql-server-dev-${{ matrix.pg_version }} \
+            gettext
       
       - name: Install dependencies (macOS)
         if: matrix.platform == 'macos'
