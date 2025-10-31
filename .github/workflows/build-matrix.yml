@@ -236,6 +236,9 @@ jobs:
           elif [ "${{ matrix.platform }}" = "rocky" ]; then
             export PG_CONFIG=/usr/pgsql-${{ matrix.pg_version }}/bin/pg_config
             
+            # Create postgres user if it doesn't exist
+            id -u postgres &>/dev/null || useradd -r -m -d /var/lib/pgsql postgres
+            
             # Initialize PostgreSQL data directory
             export PGDATA=/var/lib/pgsql/${{ matrix.pg_version }}/data
             if [ ! -d "$PGDATA" ]; then
