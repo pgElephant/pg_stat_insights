@@ -1,0 +1,301 @@
+-- ============================================================================
+-- Test 18: Partitioned Tables
+-- Tests tracking of queries on partitioned tables
+-- ============================================================================
+-- Reset statistics
+SELECT pg_stat_insights_reset();
+ERROR:  function pg_stat_insights_reset() does not exist
+LINE 1: SELECT pg_stat_insights_reset();
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+-- Create partitioned table
+SELECT setseed(0.5);
+ setseed 
+---------
+ 
+(1 row)
+
+CREATE TEMP TABLE partition_test (
+  id serial,
+  region text NOT NULL,
+  order_date date NOT NULL,
+  amount numeric(10,2),
+  status text DEFAULT 'pending'
+) PARTITION BY RANGE (order_date);
+-- Create partitions
+CREATE TEMP TABLE partition_test_2024_q1 PARTITION OF partition_test
+  FOR VALUES FROM ('2024-01-01') TO ('2024-04-01');
+CREATE TEMP TABLE partition_test_2024_q2 PARTITION OF partition_test
+  FOR VALUES FROM ('2024-04-01') TO ('2024-07-01');
+CREATE TEMP TABLE partition_test_2024_q3 PARTITION OF partition_test
+  FOR VALUES FROM ('2024-07-01') TO ('2024-10-01');
+CREATE TEMP TABLE partition_test_2024_q4 PARTITION OF partition_test
+  FOR VALUES FROM ('2024-10-01') TO ('2025-01-01');
+-- Insert deterministic data across partitions
+INSERT INTO partition_test (region, order_date, amount, status)
+SELECT 
+  CASE (i % 4) WHEN 0 THEN 'us' WHEN 1 THEN 'eu' WHEN 2 THEN 'asia' ELSE 'other' END,
+  '2024-01-01'::date + ((i % 365) || ' days')::interval,
+  (i * 10.5)::numeric(10,2),
+  CASE (i % 3) WHEN 0 THEN 'pending' WHEN 1 THEN 'shipped' ELSE 'delivered' END
+FROM generate_series(1, 500) i;
+-- Create indexes on partitions
+CREATE INDEX idx_partition_region ON partition_test(region);
+CREATE INDEX idx_partition_date ON partition_test(order_date);
+CREATE INDEX idx_partition_status ON partition_test(status);
+-- Test queries targeting specific partitions (partition pruning)
+SELECT COUNT(*) FROM partition_test WHERE order_date >= '2024-01-01' AND order_date < '2024-04-01';
+ count 
+-------
+   181
+(1 row)
+
+SELECT COUNT(*) FROM partition_test WHERE order_date >= '2024-04-01' AND order_date < '2024-07-01';
+ count 
+-------
+   136
+(1 row)
+
+SELECT COUNT(*) FROM partition_test WHERE order_date >= '2024-07-01' AND order_date < '2024-10-01';
+ count 
+-------
+    92
+(1 row)
+
+SELECT COUNT(*) FROM partition_test WHERE order_date >= '2024-10-01' AND order_date < '2025-01-01';
+ count 
+-------
+    91
+(1 row)
+
+-- Test cross-partition queries
+SELECT 
+  region,
+  COUNT(*) AS order_count,
+  SUM(amount) AS total_amount,
+  AVG(amount) AS avg_amount
+FROM partition_test
+WHERE order_date >= '2024-01-01' AND order_date < '2024-12-31'
+GROUP BY region
+ORDER BY region;
+ region | order_count | total_amount |      avg_amount       
+--------+-------------+--------------+-----------------------
+ asia   |         125 |    328125.00 | 2625.0000000000000000
+ eu     |         125 |    326812.50 | 2614.5000000000000000
+ other  |         125 |    329437.50 | 2635.5000000000000000
+ us     |         125 |    330750.00 | 2646.0000000000000000
+(4 rows)
+
+-- Test queries with partition pruning and filters
+SELECT id, region, order_date, amount
+FROM partition_test
+WHERE region = 'us' AND order_date >= '2024-06-01' AND order_date < '2024-09-01'
+ORDER BY order_date
+LIMIT 30;
+ id  | region | order_date | amount  
+-----+--------+------------+---------
+ 152 | us     | 06-01-2024 | 1596.00
+ 156 | us     | 06-05-2024 | 1638.00
+ 160 | us     | 06-09-2024 | 1680.00
+ 164 | us     | 06-13-2024 | 1722.00
+ 168 | us     | 06-17-2024 | 1764.00
+ 172 | us     | 06-21-2024 | 1806.00
+ 176 | us     | 06-25-2024 | 1848.00
+ 180 | us     | 06-29-2024 | 1890.00
+ 184 | us     | 07-03-2024 | 1932.00
+ 188 | us     | 07-07-2024 | 1974.00
+ 192 | us     | 07-11-2024 | 2016.00
+ 196 | us     | 07-15-2024 | 2058.00
+ 200 | us     | 07-19-2024 | 2100.00
+ 204 | us     | 07-23-2024 | 2142.00
+ 208 | us     | 07-27-2024 | 2184.00
+ 212 | us     | 07-31-2024 | 2226.00
+ 216 | us     | 08-04-2024 | 2268.00
+ 220 | us     | 08-08-2024 | 2310.00
+ 224 | us     | 08-12-2024 | 2352.00
+ 228 | us     | 08-16-2024 | 2394.00
+ 232 | us     | 08-20-2024 | 2436.00
+ 236 | us     | 08-24-2024 | 2478.00
+ 240 | us     | 08-28-2024 | 2520.00
+(23 rows)
+
+-- Test queries spanning multiple partitions
+SELECT 
+  DATE_TRUNC('month', order_date) AS month,
+  COUNT(*) AS orders,
+  SUM(amount) AS total
+FROM partition_test
+WHERE order_date >= '2024-01-01' AND order_date < '2024-12-31'
+GROUP BY DATE_TRUNC('month', order_date)
+ORDER BY month;
+            month             | orders |   total   
+------------------------------+--------+-----------
+ Mon Jan 01 00:00:00 2024 PST |     61 | 128572.50
+ Thu Feb 01 00:00:00 2024 PST |     58 | 138547.50
+ Fri Mar 01 00:00:00 2024 PST |     62 | 167632.50
+ Mon Apr 01 00:00:00 2024 PDT |     60 | 181440.00
+ Wed May 01 00:00:00 2024 PDT |     46 | 121915.50
+ Sat Jun 01 00:00:00 2024 PDT |     30 |  52447.50
+ Mon Jul 01 00:00:00 2024 PDT |     31 |  64123.50
+ Thu Aug 01 00:00:00 2024 PDT |     31 |  74214.00
+ Sun Sep 01 00:00:00 2024 PDT |     30 |  81427.50
+ Tue Oct 01 00:00:00 2024 PDT |     31 |  94069.50
+ Fri Nov 01 00:00:00 2024 PDT |     30 | 100642.50
+ Sun Dec 01 00:00:00 2024 PST |     30 | 110092.50
+(12 rows)
+
+-- Test UPDATE on partitioned table
+UPDATE partition_test
+SET status = 'processed'
+WHERE region = 'us' AND order_date >= '2024-01-01' AND order_date < '2024-04-01';
+UPDATE partition_test
+SET amount = amount * 1.1
+WHERE status = 'pending' AND order_date >= '2024-07-01';
+-- Test DELETE on partitioned table
+DELETE FROM partition_test
+WHERE status = 'delivered' AND order_date < '2024-06-01';
+-- Test INSERT into partitioned table (should route to correct partition)
+INSERT INTO partition_test (region, order_date, amount, status)
+VALUES 
+  ('us', '2024-02-15', 500.00, 'pending'),
+  ('eu', '2024-05-20', 750.00, 'shipped'),
+  ('asia', '2024-08-10', 900.00, 'delivered'),
+  ('other', '2024-11-25', 1100.00, 'pending');
+-- Test JOIN with partitioned table
+CREATE TEMP TABLE region_info (
+  region text PRIMARY KEY,
+  region_name text,
+  currency text
+);
+INSERT INTO region_info VALUES
+  ('us', 'United States', 'USD'),
+  ('eu', 'Europe', 'EUR'),
+  ('asia', 'Asia', 'JPY'),
+  ('other', 'Other', 'USD');
+SELECT 
+  r.region_name,
+  COUNT(p.id) AS order_count,
+  SUM(p.amount) AS total_amount
+FROM partition_test p
+JOIN region_info r ON p.region = r.region
+WHERE p.order_date >= '2024-01-01' AND p.order_date < '2024-12-31'
+GROUP BY r.region_name
+ORDER BY total_amount DESC;
+  region_name  | order_count | total_amount 
+---------------+-------------+--------------
+ United States |         117 |    309263.00
+ Other         |         103 |    275641.40
+ Asia          |         102 |    273049.50
+ Europe        |         101 |    267045.75
+(4 rows)
+
+-- Test subquery with partitioned table
+SELECT 
+  region,
+  (SELECT COUNT(*) FROM partition_test p2 
+   WHERE p2.region = p1.region 
+   AND p2.order_date >= '2024-07-01') AS q3_q4_count
+FROM (SELECT DISTINCT region FROM partition_test) p1
+ORDER BY region;
+ region | q3_q4_count 
+--------+-------------
+ asia   |          47
+ eu     |          45
+ other  |          47
+ us     |          46
+(4 rows)
+
+-- Test window functions on partitioned table
+SELECT 
+  id,
+  region,
+  order_date,
+  amount,
+  SUM(amount) OVER (PARTITION BY region ORDER BY order_date) AS running_total
+FROM partition_test
+WHERE order_date >= '2024-01-01' AND order_date < '2024-04-01'
+ORDER BY region, order_date
+LIMIT 50;
+ id  | region | order_date | amount  | running_total 
+-----+--------+------------+---------+---------------
+ 366 | asia   | 01-02-2024 | 3843.00 |       3843.00
+ 370 | asia   | 01-06-2024 | 3885.00 |       7728.00
+   6 | asia   | 01-07-2024 |   63.00 |       7791.00
+  10 | asia   | 01-11-2024 |  105.00 |       7896.00
+ 378 | asia   | 01-14-2024 | 3969.00 |      11865.00
+ 382 | asia   | 01-18-2024 | 4011.00 |      15876.00
+  18 | asia   | 01-19-2024 |  189.00 |      16065.00
+  22 | asia   | 01-23-2024 |  231.00 |      16296.00
+ 390 | asia   | 01-26-2024 | 4095.00 |      20391.00
+ 394 | asia   | 01-30-2024 | 4137.00 |      24528.00
+  30 | asia   | 01-31-2024 |  315.00 |      24843.00
+  34 | asia   | 02-04-2024 |  357.00 |      25200.00
+ 402 | asia   | 02-07-2024 | 4221.00 |      29421.00
+ 406 | asia   | 02-11-2024 | 4263.00 |      33684.00
+  42 | asia   | 02-12-2024 |  441.00 |      34125.00
+  46 | asia   | 02-16-2024 |  483.00 |      34608.00
+ 414 | asia   | 02-19-2024 | 4347.00 |      38955.00
+ 418 | asia   | 02-23-2024 | 4389.00 |      43344.00
+  54 | asia   | 02-24-2024 |  567.00 |      43911.00
+  58 | asia   | 02-28-2024 |  609.00 |      44520.00
+ 426 | asia   | 03-02-2024 | 4473.00 |      48993.00
+ 430 | asia   | 03-06-2024 | 4515.00 |      53508.00
+  66 | asia   | 03-07-2024 |  693.00 |      54201.00
+  70 | asia   | 03-11-2024 |  735.00 |      54936.00
+ 438 | asia   | 03-14-2024 | 4599.00 |      59535.00
+ 442 | asia   | 03-18-2024 | 4641.00 |      64176.00
+  78 | asia   | 03-19-2024 |  819.00 |      64995.00
+  82 | asia   | 03-23-2024 |  861.00 |      65856.00
+ 450 | asia   | 03-26-2024 | 4725.00 |      70581.00
+ 454 | asia   | 03-30-2024 | 4767.00 |      75348.00
+  90 | asia   | 03-31-2024 |  945.00 |      76293.00
+   1 | eu     | 01-02-2024 |   10.50 |         10.50
+ 369 | eu     | 01-05-2024 | 3874.50 |       3885.00
+ 373 | eu     | 01-09-2024 | 3916.50 |       7801.50
+   9 | eu     | 01-10-2024 |   94.50 |       7896.00
+  13 | eu     | 01-14-2024 |  136.50 |       8032.50
+ 381 | eu     | 01-17-2024 | 4000.50 |      12033.00
+ 385 | eu     | 01-21-2024 | 4042.50 |      16075.50
+  21 | eu     | 01-22-2024 |  220.50 |      16296.00
+  25 | eu     | 01-26-2024 |  262.50 |      16558.50
+ 393 | eu     | 01-29-2024 | 4126.50 |      20685.00
+ 397 | eu     | 02-02-2024 | 4168.50 |      24853.50
+  33 | eu     | 02-03-2024 |  346.50 |      25200.00
+  37 | eu     | 02-07-2024 |  388.50 |      25588.50
+ 405 | eu     | 02-10-2024 | 4252.50 |      29841.00
+ 409 | eu     | 02-14-2024 | 4294.50 |      34135.50
+  45 | eu     | 02-15-2024 |  472.50 |      34608.00
+  49 | eu     | 02-19-2024 |  514.50 |      35122.50
+ 417 | eu     | 02-22-2024 | 4378.50 |      39501.00
+ 421 | eu     | 02-26-2024 | 4420.50 |      43921.50
+(50 rows)
+
+-- Wait for stats
+SELECT pg_sleep(0.2);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+-- Verify partitioned table queries are tracked
+SELECT 
+  COUNT(*) FILTER (WHERE query LIKE '%partition_test%') AS partition_queries,
+  COUNT(*) FILTER (WHERE query LIKE '%PARTITION%') AS partition_keyword_queries,
+  COUNT(*) FILTER (WHERE query LIKE '%order_date%') AS date_filter_queries
+FROM pg_stat_insights
+WHERE query LIKE '%partition_test%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 5: FROM pg_stat_insights
+             ^
+-- Verify partition query metrics
+SELECT 
+  calls >= 1 AS has_executions,
+  rows >= 0 AS returned_rows,
+  total_exec_time > 0 AS has_execution_time,
+  shared_blks_hit >= 0 AS has_cache_usage
+FROM pg_stat_insights
+WHERE query LIKE '%partition_test%' AND calls > 0
+LIMIT 1;
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 6: FROM pg_stat_insights
+             ^

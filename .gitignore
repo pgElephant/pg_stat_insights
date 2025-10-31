@@ -16,6 +16,9 @@ tmp_check/
 tmp_check_iso/
 log/
 output_iso/
+test_results.log
+test_db/
+*.out.diff
 
 # Editor files
 .vscode/

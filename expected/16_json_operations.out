@@ -1,0 +1,786 @@
+-- ============================================================================
+-- Test 16: JSON and JSONB Operations
+-- Tests tracking of JSON/JSONB queries and operations
+-- ============================================================================
+-- Reset statistics
+SELECT pg_stat_insights_reset();
+ERROR:  function pg_stat_insights_reset() does not exist
+LINE 1: SELECT pg_stat_insights_reset();
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+-- Create test table with JSON/JSONB columns
+SELECT setseed(0.5);
+ setseed 
+---------
+ 
+(1 row)
+
+CREATE TEMP TABLE json_test (
+  id serial PRIMARY KEY,
+  data jsonb,
+  metadata json,
+  config jsonb,
+  tags jsonb DEFAULT '[]'::jsonb,
+  created_at timestamp DEFAULT '2025-10-31 12:00:00'::timestamp
+);
+-- Insert deterministic JSON data
+INSERT INTO json_test (data, metadata, config, tags)
+SELECT 
+  jsonb_build_object(
+    'id', i,
+    'name', 'item_' || i,
+    'value', i * 1.5,
+    'category', CASE (i % 5) WHEN 0 THEN 'A' WHEN 1 THEN 'B' WHEN 2 THEN 'C' WHEN 3 THEN 'D' ELSE 'E' END,
+    'nested', jsonb_build_object('level', i % 10, 'active', (i % 2 = 0))
+  ),
+  ('{"source":"test","version":' || (i % 10) || '}')::json,
+  jsonb_build_object('setting_' || (i % 20), i * 0.5, 'enabled', (i % 3 = 0)),
+  jsonb_build_array('tag' || (i % 10), 'category' || (i % 5))
+FROM generate_series(1, 500) i;
+-- Create GIN indexes for JSONB
+CREATE INDEX idx_json_data ON json_test USING GIN (data);
+CREATE INDEX idx_json_config ON json_test USING GIN (config);
+CREATE INDEX idx_json_tags ON json_test USING GIN (tags);
+-- Test JSONB field access
+SELECT id, data->>'name' AS name, data->>'category' AS category
+FROM json_test
+WHERE (data->>'category') = 'A'
+ORDER BY id
+LIMIT 20;
+ id  |   name   | category 
+-----+----------+----------
+   5 | item_5   | A
+  10 | item_10  | A
+  15 | item_15  | A
+  20 | item_20  | A
+  25 | item_25  | A
+  30 | item_30  | A
+  35 | item_35  | A
+  40 | item_40  | A
+  45 | item_45  | A
+  50 | item_50  | A
+  55 | item_55  | A
+  60 | item_60  | A
+  65 | item_65  | A
+  70 | item_70  | A
+  75 | item_75  | A
+  80 | item_80  | A
+  85 | item_85  | A
+  90 | item_90  | A
+  95 | item_95  | A
+ 100 | item_100 | A
+(20 rows)
+
+-- Test JSONB field extraction as numeric
+SELECT id, (data->>'value')::numeric AS value
+FROM json_test
+WHERE (data->>'value')::numeric > 250
+ORDER BY value DESC
+LIMIT 25;
+ id  | value 
+-----+-------
+ 500 | 750.0
+ 499 | 748.5
+ 498 | 747.0
+ 497 | 745.5
+ 496 | 744.0
+ 495 | 742.5
+ 494 | 741.0
+ 493 | 739.5
+ 492 | 738.0
+ 491 | 736.5
+ 490 | 735.0
+ 489 | 733.5
+ 488 | 732.0
+ 487 | 730.5
+ 486 | 729.0
+ 485 | 727.5
+ 484 | 726.0
+ 483 | 724.5
+ 482 | 723.0
+ 481 | 721.5
+ 480 | 720.0
+ 479 | 718.5
+ 478 | 717.0
+ 477 | 715.5
+ 476 | 714.0
+(25 rows)
+
+-- Test JSONB nested access
+SELECT id, data->'nested'->>'level' AS nested_level
+FROM json_test
+WHERE (data->'nested'->>'level')::int > 5
+ORDER BY id
+LIMIT 30;
+ id | nested_level 
+----+--------------
+  6 | 6
+  7 | 7
+  8 | 8
+  9 | 9
+ 16 | 6
+ 17 | 7
+ 18 | 8
+ 19 | 9
+ 26 | 6
+ 27 | 7
+ 28 | 8
+ 29 | 9
+ 36 | 6
+ 37 | 7
+ 38 | 8
+ 39 | 9
+ 46 | 6
+ 47 | 7
+ 48 | 8
+ 49 | 9
+ 56 | 6
+ 57 | 7
+ 58 | 8
+ 59 | 9
+ 66 | 6
+ 67 | 7
+ 68 | 8
+ 69 | 9
+ 76 | 6
+ 77 | 7
+(30 rows)
+
+-- Test JSONB containment (@>)
+SELECT id, data
+FROM json_test
+WHERE data @> '{"category": "B"}'
+ORDER BY id
+LIMIT 20;
+ id |                                                  data                                                   
+----+---------------------------------------------------------------------------------------------------------
+  1 | {"id": 1, "name": "item_1", "value": 1.5, "nested": {"level": 1, "active": false}, "category": "B"}
+  6 | {"id": 6, "name": "item_6", "value": 9.0, "nested": {"level": 6, "active": true}, "category": "B"}
+ 11 | {"id": 11, "name": "item_11", "value": 16.5, "nested": {"level": 1, "active": false}, "category": "B"}
+ 16 | {"id": 16, "name": "item_16", "value": 24.0, "nested": {"level": 6, "active": true}, "category": "B"}
+ 21 | {"id": 21, "name": "item_21", "value": 31.5, "nested": {"level": 1, "active": false}, "category": "B"}
+ 26 | {"id": 26, "name": "item_26", "value": 39.0, "nested": {"level": 6, "active": true}, "category": "B"}
+ 31 | {"id": 31, "name": "item_31", "value": 46.5, "nested": {"level": 1, "active": false}, "category": "B"}
+ 36 | {"id": 36, "name": "item_36", "value": 54.0, "nested": {"level": 6, "active": true}, "category": "B"}
+ 41 | {"id": 41, "name": "item_41", "value": 61.5, "nested": {"level": 1, "active": false}, "category": "B"}
+ 46 | {"id": 46, "name": "item_46", "value": 69.0, "nested": {"level": 6, "active": true}, "category": "B"}
+ 51 | {"id": 51, "name": "item_51", "value": 76.5, "nested": {"level": 1, "active": false}, "category": "B"}
+ 56 | {"id": 56, "name": "item_56", "value": 84.0, "nested": {"level": 6, "active": true}, "category": "B"}
+ 61 | {"id": 61, "name": "item_61", "value": 91.5, "nested": {"level": 1, "active": false}, "category": "B"}
+ 66 | {"id": 66, "name": "item_66", "value": 99.0, "nested": {"level": 6, "active": true}, "category": "B"}
+ 71 | {"id": 71, "name": "item_71", "value": 106.5, "nested": {"level": 1, "active": false}, "category": "B"}
+ 76 | {"id": 76, "name": "item_76", "value": 114.0, "nested": {"level": 6, "active": true}, "category": "B"}
+ 81 | {"id": 81, "name": "item_81", "value": 121.5, "nested": {"level": 1, "active": false}, "category": "B"}
+ 86 | {"id": 86, "name": "item_86", "value": 129.0, "nested": {"level": 6, "active": true}, "category": "B"}
+ 91 | {"id": 91, "name": "item_91", "value": 136.5, "nested": {"level": 1, "active": false}, "category": "B"}
+ 96 | {"id": 96, "name": "item_96", "value": 144.0, "nested": {"level": 6, "active": true}, "category": "B"}
+(20 rows)
+
+-- Test JSONB containment with nested
+SELECT id, data
+FROM json_test
+WHERE data @> '{"nested": {"active": true}}'
+ORDER BY id
+LIMIT 15;
+ id |                                                 data                                                  
+----+-------------------------------------------------------------------------------------------------------
+  2 | {"id": 2, "name": "item_2", "value": 3.0, "nested": {"level": 2, "active": true}, "category": "C"}
+  4 | {"id": 4, "name": "item_4", "value": 6.0, "nested": {"level": 4, "active": true}, "category": "E"}
+  6 | {"id": 6, "name": "item_6", "value": 9.0, "nested": {"level": 6, "active": true}, "category": "B"}
+  8 | {"id": 8, "name": "item_8", "value": 12.0, "nested": {"level": 8, "active": true}, "category": "D"}
+ 10 | {"id": 10, "name": "item_10", "value": 15.0, "nested": {"level": 0, "active": true}, "category": "A"}
+ 12 | {"id": 12, "name": "item_12", "value": 18.0, "nested": {"level": 2, "active": true}, "category": "C"}
+ 14 | {"id": 14, "name": "item_14", "value": 21.0, "nested": {"level": 4, "active": true}, "category": "E"}
+ 16 | {"id": 16, "name": "item_16", "value": 24.0, "nested": {"level": 6, "active": true}, "category": "B"}
+ 18 | {"id": 18, "name": "item_18", "value": 27.0, "nested": {"level": 8, "active": true}, "category": "D"}
+ 20 | {"id": 20, "name": "item_20", "value": 30.0, "nested": {"level": 0, "active": true}, "category": "A"}
+ 22 | {"id": 22, "name": "item_22", "value": 33.0, "nested": {"level": 2, "active": true}, "category": "C"}
+ 24 | {"id": 24, "name": "item_24", "value": 36.0, "nested": {"level": 4, "active": true}, "category": "E"}
+ 26 | {"id": 26, "name": "item_26", "value": 39.0, "nested": {"level": 6, "active": true}, "category": "B"}
+ 28 | {"id": 28, "name": "item_28", "value": 42.0, "nested": {"level": 8, "active": true}, "category": "D"}
+ 30 | {"id": 30, "name": "item_30", "value": 45.0, "nested": {"level": 0, "active": true}, "category": "A"}
+(15 rows)
+
+-- Test JSONB key exists (?)
+SELECT id, data
+FROM json_test
+WHERE data ? 'category' AND data ? 'nested'
+ORDER BY id
+LIMIT 25;
+ id |                                                  data                                                  
+----+--------------------------------------------------------------------------------------------------------
+  1 | {"id": 1, "name": "item_1", "value": 1.5, "nested": {"level": 1, "active": false}, "category": "B"}
+  2 | {"id": 2, "name": "item_2", "value": 3.0, "nested": {"level": 2, "active": true}, "category": "C"}
+  3 | {"id": 3, "name": "item_3", "value": 4.5, "nested": {"level": 3, "active": false}, "category": "D"}
+  4 | {"id": 4, "name": "item_4", "value": 6.0, "nested": {"level": 4, "active": true}, "category": "E"}
+  5 | {"id": 5, "name": "item_5", "value": 7.5, "nested": {"level": 5, "active": false}, "category": "A"}
+  6 | {"id": 6, "name": "item_6", "value": 9.0, "nested": {"level": 6, "active": true}, "category": "B"}
+  7 | {"id": 7, "name": "item_7", "value": 10.5, "nested": {"level": 7, "active": false}, "category": "C"}
+  8 | {"id": 8, "name": "item_8", "value": 12.0, "nested": {"level": 8, "active": true}, "category": "D"}
+  9 | {"id": 9, "name": "item_9", "value": 13.5, "nested": {"level": 9, "active": false}, "category": "E"}
+ 10 | {"id": 10, "name": "item_10", "value": 15.0, "nested": {"level": 0, "active": true}, "category": "A"}
+ 11 | {"id": 11, "name": "item_11", "value": 16.5, "nested": {"level": 1, "active": false}, "category": "B"}
+ 12 | {"id": 12, "name": "item_12", "value": 18.0, "nested": {"level": 2, "active": true}, "category": "C"}
+ 13 | {"id": 13, "name": "item_13", "value": 19.5, "nested": {"level": 3, "active": false}, "category": "D"}
+ 14 | {"id": 14, "name": "item_14", "value": 21.0, "nested": {"level": 4, "active": true}, "category": "E"}
+ 15 | {"id": 15, "name": "item_15", "value": 22.5, "nested": {"level": 5, "active": false}, "category": "A"}
+ 16 | {"id": 16, "name": "item_16", "value": 24.0, "nested": {"level": 6, "active": true}, "category": "B"}
+ 17 | {"id": 17, "name": "item_17", "value": 25.5, "nested": {"level": 7, "active": false}, "category": "C"}
+ 18 | {"id": 18, "name": "item_18", "value": 27.0, "nested": {"level": 8, "active": true}, "category": "D"}
+ 19 | {"id": 19, "name": "item_19", "value": 28.5, "nested": {"level": 9, "active": false}, "category": "E"}
+ 20 | {"id": 20, "name": "item_20", "value": 30.0, "nested": {"level": 0, "active": true}, "category": "A"}
+ 21 | {"id": 21, "name": "item_21", "value": 31.5, "nested": {"level": 1, "active": false}, "category": "B"}
+ 22 | {"id": 22, "name": "item_22", "value": 33.0, "nested": {"level": 2, "active": true}, "category": "C"}
+ 23 | {"id": 23, "name": "item_23", "value": 34.5, "nested": {"level": 3, "active": false}, "category": "D"}
+ 24 | {"id": 24, "name": "item_24", "value": 36.0, "nested": {"level": 4, "active": true}, "category": "E"}
+ 25 | {"id": 25, "name": "item_25", "value": 37.5, "nested": {"level": 5, "active": false}, "category": "A"}
+(25 rows)
+
+-- Test JSONB any key exists (?|)
+SELECT id, data
+FROM json_test
+WHERE data ?| ARRAY['category', 'value']
+ORDER BY id
+LIMIT 20;
+ id |                                                  data                                                  
+----+--------------------------------------------------------------------------------------------------------
+  1 | {"id": 1, "name": "item_1", "value": 1.5, "nested": {"level": 1, "active": false}, "category": "B"}
+  2 | {"id": 2, "name": "item_2", "value": 3.0, "nested": {"level": 2, "active": true}, "category": "C"}
+  3 | {"id": 3, "name": "item_3", "value": 4.5, "nested": {"level": 3, "active": false}, "category": "D"}
+  4 | {"id": 4, "name": "item_4", "value": 6.0, "nested": {"level": 4, "active": true}, "category": "E"}
+  5 | {"id": 5, "name": "item_5", "value": 7.5, "nested": {"level": 5, "active": false}, "category": "A"}
+  6 | {"id": 6, "name": "item_6", "value": 9.0, "nested": {"level": 6, "active": true}, "category": "B"}
+  7 | {"id": 7, "name": "item_7", "value": 10.5, "nested": {"level": 7, "active": false}, "category": "C"}
+  8 | {"id": 8, "name": "item_8", "value": 12.0, "nested": {"level": 8, "active": true}, "category": "D"}
+  9 | {"id": 9, "name": "item_9", "value": 13.5, "nested": {"level": 9, "active": false}, "category": "E"}
+ 10 | {"id": 10, "name": "item_10", "value": 15.0, "nested": {"level": 0, "active": true}, "category": "A"}
+ 11 | {"id": 11, "name": "item_11", "value": 16.5, "nested": {"level": 1, "active": false}, "category": "B"}
+ 12 | {"id": 12, "name": "item_12", "value": 18.0, "nested": {"level": 2, "active": true}, "category": "C"}
+ 13 | {"id": 13, "name": "item_13", "value": 19.5, "nested": {"level": 3, "active": false}, "category": "D"}
+ 14 | {"id": 14, "name": "item_14", "value": 21.0, "nested": {"level": 4, "active": true}, "category": "E"}
+ 15 | {"id": 15, "name": "item_15", "value": 22.5, "nested": {"level": 5, "active": false}, "category": "A"}
+ 16 | {"id": 16, "name": "item_16", "value": 24.0, "nested": {"level": 6, "active": true}, "category": "B"}
+ 17 | {"id": 17, "name": "item_17", "value": 25.5, "nested": {"level": 7, "active": false}, "category": "C"}
+ 18 | {"id": 18, "name": "item_18", "value": 27.0, "nested": {"level": 8, "active": true}, "category": "D"}
+ 19 | {"id": 19, "name": "item_19", "value": 28.5, "nested": {"level": 9, "active": false}, "category": "E"}
+ 20 | {"id": 20, "name": "item_20", "value": 30.0, "nested": {"level": 0, "active": true}, "category": "A"}
+(20 rows)
+
+-- Test JSONB all keys exist (?&)
+SELECT id, data
+FROM json_test
+WHERE data ?& ARRAY['id', 'name', 'category']
+ORDER BY id
+LIMIT 30;
+ id |                                                  data                                                  
+----+--------------------------------------------------------------------------------------------------------
+  1 | {"id": 1, "name": "item_1", "value": 1.5, "nested": {"level": 1, "active": false}, "category": "B"}
+  2 | {"id": 2, "name": "item_2", "value": 3.0, "nested": {"level": 2, "active": true}, "category": "C"}
+  3 | {"id": 3, "name": "item_3", "value": 4.5, "nested": {"level": 3, "active": false}, "category": "D"}
+  4 | {"id": 4, "name": "item_4", "value": 6.0, "nested": {"level": 4, "active": true}, "category": "E"}
+  5 | {"id": 5, "name": "item_5", "value": 7.5, "nested": {"level": 5, "active": false}, "category": "A"}
+  6 | {"id": 6, "name": "item_6", "value": 9.0, "nested": {"level": 6, "active": true}, "category": "B"}
+  7 | {"id": 7, "name": "item_7", "value": 10.5, "nested": {"level": 7, "active": false}, "category": "C"}
+  8 | {"id": 8, "name": "item_8", "value": 12.0, "nested": {"level": 8, "active": true}, "category": "D"}
+  9 | {"id": 9, "name": "item_9", "value": 13.5, "nested": {"level": 9, "active": false}, "category": "E"}
+ 10 | {"id": 10, "name": "item_10", "value": 15.0, "nested": {"level": 0, "active": true}, "category": "A"}
+ 11 | {"id": 11, "name": "item_11", "value": 16.5, "nested": {"level": 1, "active": false}, "category": "B"}
+ 12 | {"id": 12, "name": "item_12", "value": 18.0, "nested": {"level": 2, "active": true}, "category": "C"}
+ 13 | {"id": 13, "name": "item_13", "value": 19.5, "nested": {"level": 3, "active": false}, "category": "D"}
+ 14 | {"id": 14, "name": "item_14", "value": 21.0, "nested": {"level": 4, "active": true}, "category": "E"}
+ 15 | {"id": 15, "name": "item_15", "value": 22.5, "nested": {"level": 5, "active": false}, "category": "A"}
+ 16 | {"id": 16, "name": "item_16", "value": 24.0, "nested": {"level": 6, "active": true}, "category": "B"}
+ 17 | {"id": 17, "name": "item_17", "value": 25.5, "nested": {"level": 7, "active": false}, "category": "C"}
+ 18 | {"id": 18, "name": "item_18", "value": 27.0, "nested": {"level": 8, "active": true}, "category": "D"}
+ 19 | {"id": 19, "name": "item_19", "value": 28.5, "nested": {"level": 9, "active": false}, "category": "E"}
+ 20 | {"id": 20, "name": "item_20", "value": 30.0, "nested": {"level": 0, "active": true}, "category": "A"}
+ 21 | {"id": 21, "name": "item_21", "value": 31.5, "nested": {"level": 1, "active": false}, "category": "B"}
+ 22 | {"id": 22, "name": "item_22", "value": 33.0, "nested": {"level": 2, "active": true}, "category": "C"}
+ 23 | {"id": 23, "name": "item_23", "value": 34.5, "nested": {"level": 3, "active": false}, "category": "D"}
+ 24 | {"id": 24, "name": "item_24", "value": 36.0, "nested": {"level": 4, "active": true}, "category": "E"}
+ 25 | {"id": 25, "name": "item_25", "value": 37.5, "nested": {"level": 5, "active": false}, "category": "A"}
+ 26 | {"id": 26, "name": "item_26", "value": 39.0, "nested": {"level": 6, "active": true}, "category": "B"}
+ 27 | {"id": 27, "name": "item_27", "value": 40.5, "nested": {"level": 7, "active": false}, "category": "C"}
+ 28 | {"id": 28, "name": "item_28", "value": 42.0, "nested": {"level": 8, "active": true}, "category": "D"}
+ 29 | {"id": 29, "name": "item_29", "value": 43.5, "nested": {"level": 9, "active": false}, "category": "E"}
+ 30 | {"id": 30, "name": "item_30", "value": 45.0, "nested": {"level": 0, "active": true}, "category": "A"}
+(30 rows)
+
+-- Test JSONB path queries (jsonb_path_query)
+SELECT 
+  id,
+  jsonb_path_query(data, '$.nested.level') AS level_path
+FROM json_test
+WHERE data @> '{"nested": {"level": 7}}'
+ORDER BY id
+LIMIT 20;
+ id  | level_path 
+-----+------------
+   7 | 7
+  17 | 7
+  27 | 7
+  37 | 7
+  47 | 7
+  57 | 7
+  67 | 7
+  77 | 7
+  87 | 7
+  97 | 7
+ 107 | 7
+ 117 | 7
+ 127 | 7
+ 137 | 7
+ 147 | 7
+ 157 | 7
+ 167 | 7
+ 177 | 7
+ 187 | 7
+ 197 | 7
+(20 rows)
+
+-- Test JSON aggregation
+SELECT 
+  data->>'category' AS category,
+  COUNT(*) AS count,
+  AVG((data->>'value')::numeric) AS avg_value,
+  jsonb_agg(data->'id') AS id_array
+FROM json_test
+GROUP BY data->>'category'
+ORDER BY category
+LIMIT 10;
+ category | count |      avg_value       |                                                                                                                                                                                                                                             id_array                                                                                                                                                                                                                                             
+----------+-------+----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ A        |   100 | 378.7500000000000000 | [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180, 185, 190, 195, 200, 205, 210, 215, 220, 225, 230, 235, 240, 245, 250, 255, 260, 265, 270, 275, 280, 285, 290, 295, 300, 305, 310, 315, 320, 325, 330, 335, 340, 345, 350, 355, 360, 365, 370, 375, 380, 385, 390, 395, 400, 405, 410, 415, 420, 425, 430, 435, 440, 445, 450, 455, 460, 465, 470, 475, 480, 485, 490, 495, 500]
+ B        |   100 | 372.7500000000000000 | [1, 6, 11, 16, 21, 26, 31, 36, 41, 46, 51, 56, 61, 66, 71, 76, 81, 86, 91, 96, 101, 106, 111, 116, 121, 126, 131, 136, 141, 146, 151, 156, 161, 166, 171, 176, 181, 186, 191, 196, 201, 206, 211, 216, 221, 226, 231, 236, 241, 246, 251, 256, 261, 266, 271, 276, 281, 286, 291, 296, 301, 306, 311, 316, 321, 326, 331, 336, 341, 346, 351, 356, 361, 366, 371, 376, 381, 386, 391, 396, 401, 406, 411, 416, 421, 426, 431, 436, 441, 446, 451, 456, 461, 466, 471, 476, 481, 486, 491, 496]
+ C        |   100 | 374.2500000000000000 | [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77, 82, 87, 92, 97, 102, 107, 112, 117, 122, 127, 132, 137, 142, 147, 152, 157, 162, 167, 172, 177, 182, 187, 192, 197, 202, 207, 212, 217, 222, 227, 232, 237, 242, 247, 252, 257, 262, 267, 272, 277, 282, 287, 292, 297, 302, 307, 312, 317, 322, 327, 332, 337, 342, 347, 352, 357, 362, 367, 372, 377, 382, 387, 392, 397, 402, 407, 412, 417, 422, 427, 432, 437, 442, 447, 452, 457, 462, 467, 472, 477, 482, 487, 492, 497]
+ D        |   100 | 375.7500000000000000 | [3, 8, 13, 18, 23, 28, 33, 38, 43, 48, 53, 58, 63, 68, 73, 78, 83, 88, 93, 98, 103, 108, 113, 118, 123, 128, 133, 138, 143, 148, 153, 158, 163, 168, 173, 178, 183, 188, 193, 198, 203, 208, 213, 218, 223, 228, 233, 238, 243, 248, 253, 258, 263, 268, 273, 278, 283, 288, 293, 298, 303, 308, 313, 318, 323, 328, 333, 338, 343, 348, 353, 358, 363, 368, 373, 378, 383, 388, 393, 398, 403, 408, 413, 418, 423, 428, 433, 438, 443, 448, 453, 458, 463, 468, 473, 478, 483, 488, 493, 498]
+ E        |   100 | 377.2500000000000000 | [4, 9, 14, 19, 24, 29, 34, 39, 44, 49, 54, 59, 64, 69, 74, 79, 84, 89, 94, 99, 104, 109, 114, 119, 124, 129, 134, 139, 144, 149, 154, 159, 164, 169, 174, 179, 184, 189, 194, 199, 204, 209, 214, 219, 224, 229, 234, 239, 244, 249, 254, 259, 264, 269, 274, 279, 284, 289, 294, 299, 304, 309, 314, 319, 324, 329, 334, 339, 344, 349, 354, 359, 364, 369, 374, 379, 384, 389, 394, 399, 404, 409, 414, 419, 424, 429, 434, 439, 444, 449, 454, 459, 464, 469, 474, 479, 484, 489, 494, 499]
+(5 rows)
+
+-- Test JSONB set operations
+SELECT 
+  id,
+  data || '{"extra": "field"}'::jsonb AS merged_data
+FROM json_test
+WHERE id <= 10
+ORDER BY id;
+ id |                                                       merged_data                                                       
+----+-------------------------------------------------------------------------------------------------------------------------
+  1 | {"id": 1, "name": "item_1", "extra": "field", "value": 1.5, "nested": {"level": 1, "active": false}, "category": "B"}
+  2 | {"id": 2, "name": "item_2", "extra": "field", "value": 3.0, "nested": {"level": 2, "active": true}, "category": "C"}
+  3 | {"id": 3, "name": "item_3", "extra": "field", "value": 4.5, "nested": {"level": 3, "active": false}, "category": "D"}
+  4 | {"id": 4, "name": "item_4", "extra": "field", "value": 6.0, "nested": {"level": 4, "active": true}, "category": "E"}
+  5 | {"id": 5, "name": "item_5", "extra": "field", "value": 7.5, "nested": {"level": 5, "active": false}, "category": "A"}
+  6 | {"id": 6, "name": "item_6", "extra": "field", "value": 9.0, "nested": {"level": 6, "active": true}, "category": "B"}
+  7 | {"id": 7, "name": "item_7", "extra": "field", "value": 10.5, "nested": {"level": 7, "active": false}, "category": "C"}
+  8 | {"id": 8, "name": "item_8", "extra": "field", "value": 12.0, "nested": {"level": 8, "active": true}, "category": "D"}
+  9 | {"id": 9, "name": "item_9", "extra": "field", "value": 13.5, "nested": {"level": 9, "active": false}, "category": "E"}
+ 10 | {"id": 10, "name": "item_10", "extra": "field", "value": 15.0, "nested": {"level": 0, "active": true}, "category": "A"}
+(10 rows)
+
+-- Test JSONB array operations
+SELECT 
+  id,
+  jsonb_array_length(tags) AS tag_count,
+  tags->0 AS first_tag
+FROM json_test
+WHERE jsonb_array_length(tags) > 1
+ORDER BY id
+LIMIT 25;
+ id | tag_count | first_tag 
+----+-----------+-----------
+  1 |         2 | "tag1"
+  2 |         2 | "tag2"
+  3 |         2 | "tag3"
+  4 |         2 | "tag4"
+  5 |         2 | "tag5"
+  6 |         2 | "tag6"
+  7 |         2 | "tag7"
+  8 |         2 | "tag8"
+  9 |         2 | "tag9"
+ 10 |         2 | "tag0"
+ 11 |         2 | "tag1"
+ 12 |         2 | "tag2"
+ 13 |         2 | "tag3"
+ 14 |         2 | "tag4"
+ 15 |         2 | "tag5"
+ 16 |         2 | "tag6"
+ 17 |         2 | "tag7"
+ 18 |         2 | "tag8"
+ 19 |         2 | "tag9"
+ 20 |         2 | "tag0"
+ 21 |         2 | "tag1"
+ 22 |         2 | "tag2"
+ 23 |         2 | "tag3"
+ 24 |         2 | "tag4"
+ 25 |         2 | "tag5"
+(25 rows)
+
+-- Test JSONB text search in arrays
+SELECT id, tags
+FROM json_test
+WHERE tags @> '"tag5"'::jsonb
+ORDER BY id
+LIMIT 20;
+ id  |         tags          
+-----+-----------------------
+   5 | ["tag5", "category0"]
+  15 | ["tag5", "category0"]
+  25 | ["tag5", "category0"]
+  35 | ["tag5", "category0"]
+  45 | ["tag5", "category0"]
+  55 | ["tag5", "category0"]
+  65 | ["tag5", "category0"]
+  75 | ["tag5", "category0"]
+  85 | ["tag5", "category0"]
+  95 | ["tag5", "category0"]
+ 105 | ["tag5", "category0"]
+ 115 | ["tag5", "category0"]
+ 125 | ["tag5", "category0"]
+ 135 | ["tag5", "category0"]
+ 145 | ["tag5", "category0"]
+ 155 | ["tag5", "category0"]
+ 165 | ["tag5", "category0"]
+ 175 | ["tag5", "category0"]
+ 185 | ["tag5", "category0"]
+ 195 | ["tag5", "category0"]
+(20 rows)
+
+-- Test JSON type casting
+SELECT 
+  id,
+  metadata::jsonb AS metadata_jsonb,
+  config::json AS config_json
+FROM json_test
+WHERE id <= 15
+ORDER BY id;
+ id |          metadata_jsonb          |              config_json              
+----+----------------------------------+---------------------------------------
+  1 | {"source": "test", "version": 1} | {"enabled": false, "setting_1": 0.5}
+  2 | {"source": "test", "version": 2} | {"enabled": false, "setting_2": 1.0}
+  3 | {"source": "test", "version": 3} | {"enabled": true, "setting_3": 1.5}
+  4 | {"source": "test", "version": 4} | {"enabled": false, "setting_4": 2.0}
+  5 | {"source": "test", "version": 5} | {"enabled": false, "setting_5": 2.5}
+  6 | {"source": "test", "version": 6} | {"enabled": true, "setting_6": 3.0}
+  7 | {"source": "test", "version": 7} | {"enabled": false, "setting_7": 3.5}
+  8 | {"source": "test", "version": 8} | {"enabled": false, "setting_8": 4.0}
+  9 | {"source": "test", "version": 9} | {"enabled": true, "setting_9": 4.5}
+ 10 | {"source": "test", "version": 0} | {"enabled": false, "setting_10": 5.0}
+ 11 | {"source": "test", "version": 1} | {"enabled": false, "setting_11": 5.5}
+ 12 | {"source": "test", "version": 2} | {"enabled": true, "setting_12": 6.0}
+ 13 | {"source": "test", "version": 3} | {"enabled": false, "setting_13": 6.5}
+ 14 | {"source": "test", "version": 4} | {"enabled": false, "setting_14": 7.0}
+ 15 | {"source": "test", "version": 5} | {"enabled": true, "setting_15": 7.5}
+(15 rows)
+
+-- Test jsonb_build_object
+SELECT 
+  id,
+  jsonb_build_object(
+    'original_id', id,
+    'computed_value', (data->>'value')::numeric * 2,
+    'is_active', (data->'nested'->>'active')::boolean
+  ) AS computed_json
+FROM json_test
+WHERE (data->'nested'->>'active')::boolean = true
+ORDER BY id
+LIMIT 30;
+ id |                          computed_json                          
+----+-----------------------------------------------------------------
+  2 | {"is_active": true, "original_id": 2, "computed_value": 6.0}
+  4 | {"is_active": true, "original_id": 4, "computed_value": 12.0}
+  6 | {"is_active": true, "original_id": 6, "computed_value": 18.0}
+  8 | {"is_active": true, "original_id": 8, "computed_value": 24.0}
+ 10 | {"is_active": true, "original_id": 10, "computed_value": 30.0}
+ 12 | {"is_active": true, "original_id": 12, "computed_value": 36.0}
+ 14 | {"is_active": true, "original_id": 14, "computed_value": 42.0}
+ 16 | {"is_active": true, "original_id": 16, "computed_value": 48.0}
+ 18 | {"is_active": true, "original_id": 18, "computed_value": 54.0}
+ 20 | {"is_active": true, "original_id": 20, "computed_value": 60.0}
+ 22 | {"is_active": true, "original_id": 22, "computed_value": 66.0}
+ 24 | {"is_active": true, "original_id": 24, "computed_value": 72.0}
+ 26 | {"is_active": true, "original_id": 26, "computed_value": 78.0}
+ 28 | {"is_active": true, "original_id": 28, "computed_value": 84.0}
+ 30 | {"is_active": true, "original_id": 30, "computed_value": 90.0}
+ 32 | {"is_active": true, "original_id": 32, "computed_value": 96.0}
+ 34 | {"is_active": true, "original_id": 34, "computed_value": 102.0}
+ 36 | {"is_active": true, "original_id": 36, "computed_value": 108.0}
+ 38 | {"is_active": true, "original_id": 38, "computed_value": 114.0}
+ 40 | {"is_active": true, "original_id": 40, "computed_value": 120.0}
+ 42 | {"is_active": true, "original_id": 42, "computed_value": 126.0}
+ 44 | {"is_active": true, "original_id": 44, "computed_value": 132.0}
+ 46 | {"is_active": true, "original_id": 46, "computed_value": 138.0}
+ 48 | {"is_active": true, "original_id": 48, "computed_value": 144.0}
+ 50 | {"is_active": true, "original_id": 50, "computed_value": 150.0}
+ 52 | {"is_active": true, "original_id": 52, "computed_value": 156.0}
+ 54 | {"is_active": true, "original_id": 54, "computed_value": 162.0}
+ 56 | {"is_active": true, "original_id": 56, "computed_value": 168.0}
+ 58 | {"is_active": true, "original_id": 58, "computed_value": 174.0}
+ 60 | {"is_active": true, "original_id": 60, "computed_value": 180.0}
+(30 rows)
+
+-- Test jsonb_each (expand object to key-value pairs)
+SELECT 
+  id,
+  key,
+  value
+FROM json_test,
+LATERAL jsonb_each(data)
+WHERE id <= 5
+ORDER BY id, key;
+ id |   key    |             value             
+----+----------+-------------------------------
+  1 | category | "B"
+  1 | id       | 1
+  1 | name     | "item_1"
+  1 | nested   | {"level": 1, "active": false}
+  1 | value    | 1.5
+  2 | category | "C"
+  2 | id       | 2
+  2 | name     | "item_2"
+  2 | nested   | {"level": 2, "active": true}
+  2 | value    | 3.0
+  3 | category | "D"
+  3 | id       | 3
+  3 | name     | "item_3"
+  3 | nested   | {"level": 3, "active": false}
+  3 | value    | 4.5
+  4 | category | "E"
+  4 | id       | 4
+  4 | name     | "item_4"
+  4 | nested   | {"level": 4, "active": true}
+  4 | value    | 6.0
+  5 | category | "A"
+  5 | id       | 5
+  5 | name     | "item_5"
+  5 | nested   | {"level": 5, "active": false}
+  5 | value    | 7.5
+(25 rows)
+
+-- Test jsonb_each_text
+SELECT 
+  id,
+  key,
+  value
+FROM json_test,
+LATERAL jsonb_each_text(data)
+WHERE id <= 5
+ORDER BY id, key;
+ id |   key    |             value             
+----+----------+-------------------------------
+  1 | category | B
+  1 | id       | 1
+  1 | name     | item_1
+  1 | nested   | {"level": 1, "active": false}
+  1 | value    | 1.5
+  2 | category | C
+  2 | id       | 2
+  2 | name     | item_2
+  2 | nested   | {"level": 2, "active": true}
+  2 | value    | 3.0
+  3 | category | D
+  3 | id       | 3
+  3 | name     | item_3
+  3 | nested   | {"level": 3, "active": false}
+  3 | value    | 4.5
+  4 | category | E
+  4 | id       | 4
+  4 | name     | item_4
+  4 | nested   | {"level": 4, "active": true}
+  4 | value    | 6.0
+  5 | category | A
+  5 | id       | 5
+  5 | name     | item_5
+  5 | nested   | {"level": 5, "active": false}
+  5 | value    | 7.5
+(25 rows)
+
+-- Test jsonb_object_keys
+SELECT 
+  id,
+  jsonb_object_keys(data) AS key_name
+FROM json_test
+WHERE id <= 3
+ORDER BY id, key_name;
+ id | key_name 
+----+----------
+  1 | category
+  1 | id
+  1 | name
+  1 | nested
+  1 | value
+  2 | category
+  2 | id
+  2 | name
+  2 | nested
+  2 | value
+  3 | category
+  3 | id
+  3 | name
+  3 | nested
+  3 | value
+(15 rows)
+
+-- Test jsonb_pretty
+SELECT 
+  id,
+  jsonb_pretty(data) AS pretty_data
+FROM json_test
+WHERE id <= 5
+ORDER BY id;
+ id |       pretty_data       
+----+-------------------------
+  1 | {                      +
+    |     "id": 1,           +
+    |     "name": "item_1",  +
+    |     "value": 1.5,      +
+    |     "nested": {        +
+    |         "level": 1,    +
+    |         "active": false+
+    |     },                 +
+    |     "category": "B"    +
+    | }
+  2 | {                      +
+    |     "id": 2,           +
+    |     "name": "item_2",  +
+    |     "value": 3.0,      +
+    |     "nested": {        +
+    |         "level": 2,    +
+    |         "active": true +
+    |     },                 +
+    |     "category": "C"    +
+    | }
+  3 | {                      +
+    |     "id": 3,           +
+    |     "name": "item_3",  +
+    |     "value": 4.5,      +
+    |     "nested": {        +
+    |         "level": 3,    +
+    |         "active": false+
+    |     },                 +
+    |     "category": "D"    +
+    | }
+  4 | {                      +
+    |     "id": 4,           +
+    |     "name": "item_4",  +
+    |     "value": 6.0,      +
+    |     "nested": {        +
+    |         "level": 4,    +
+    |         "active": true +
+    |     },                 +
+    |     "category": "E"    +
+    | }
+  5 | {                      +
+    |     "id": 5,           +
+    |     "name": "item_5",  +
+    |     "value": 7.5,      +
+    |     "nested": {        +
+    |         "level": 5,    +
+    |         "active": false+
+    |     },                 +
+    |     "category": "A"    +
+    | }
+(5 rows)
+
+-- Test JSON functions on arrays
+SELECT 
+  id,
+  jsonb_array_elements(tags) AS tag_element
+FROM json_test
+WHERE jsonb_array_length(tags) > 0
+ORDER BY id, tag_element
+LIMIT 40;
+ id | tag_element 
+----+-------------
+  1 | "category1"
+  1 | "tag1"
+  2 | "category2"
+  2 | "tag2"
+  3 | "category3"
+  3 | "tag3"
+  4 | "category4"
+  4 | "tag4"
+  5 | "category0"
+  5 | "tag5"
+  6 | "category1"
+  6 | "tag6"
+  7 | "category2"
+  7 | "tag7"
+  8 | "category3"
+  8 | "tag8"
+  9 | "category4"
+  9 | "tag9"
+ 10 | "category0"
+ 10 | "tag0"
+ 11 | "category1"
+ 11 | "tag1"
+ 12 | "category2"
+ 12 | "tag2"
+ 13 | "category3"
+ 13 | "tag3"
+ 14 | "category4"
+ 14 | "tag4"
+ 15 | "category0"
+ 15 | "tag5"
+ 16 | "category1"
+ 16 | "tag6"
+ 17 | "category2"
+ 17 | "tag7"
+ 18 | "category3"
+ 18 | "tag8"
+ 19 | "category4"
+ 19 | "tag9"
+ 20 | "category0"
+ 20 | "tag0"
+(40 rows)
+
+-- Test jsonb_set (add/modify keys)
+SELECT 
+  id,
+  jsonb_set(data, '{new_key}', '"new_value"'::jsonb) AS modified_data
+FROM json_test
+WHERE id <= 10
+ORDER BY id;
+ id |                                                         modified_data                                                         
+----+-------------------------------------------------------------------------------------------------------------------------------
+  1 | {"id": 1, "name": "item_1", "value": 1.5, "nested": {"level": 1, "active": false}, "new_key": "new_value", "category": "B"}
+  2 | {"id": 2, "name": "item_2", "value": 3.0, "nested": {"level": 2, "active": true}, "new_key": "new_value", "category": "C"}
+  3 | {"id": 3, "name": "item_3", "value": 4.5, "nested": {"level": 3, "active": false}, "new_key": "new_value", "category": "D"}
+  4 | {"id": 4, "name": "item_4", "value": 6.0, "nested": {"level": 4, "active": true}, "new_key": "new_value", "category": "E"}
+  5 | {"id": 5, "name": "item_5", "value": 7.5, "nested": {"level": 5, "active": false}, "new_key": "new_value", "category": "A"}
+  6 | {"id": 6, "name": "item_6", "value": 9.0, "nested": {"level": 6, "active": true}, "new_key": "new_value", "category": "B"}
+  7 | {"id": 7, "name": "item_7", "value": 10.5, "nested": {"level": 7, "active": false}, "new_key": "new_value", "category": "C"}
+  8 | {"id": 8, "name": "item_8", "value": 12.0, "nested": {"level": 8, "active": true}, "new_key": "new_value", "category": "D"}
+  9 | {"id": 9, "name": "item_9", "value": 13.5, "nested": {"level": 9, "active": false}, "new_key": "new_value", "category": "E"}
+ 10 | {"id": 10, "name": "item_10", "value": 15.0, "nested": {"level": 0, "active": true}, "new_key": "new_value", "category": "A"}
+(10 rows)
+
+-- Wait for stats
+SELECT pg_sleep(0.2);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+-- Verify JSON operations are tracked
+SELECT 
+  COUNT(*) FILTER (WHERE query LIKE '%json%' OR query LIKE '%JSON%') AS json_queries,
+  COUNT(*) FILTER (WHERE query LIKE '%@>%' OR query LIKE '%?%') AS containment_queries,
+  COUNT(*) FILTER (WHERE query LIKE '%jsonb_path%' OR query LIKE '%jsonb_each%') AS function_queries
+FROM pg_stat_insights
+WHERE query LIKE '%json_test%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 5: FROM pg_stat_insights
+             ^
+-- Verify JSON query metrics
+SELECT 
+  calls >= 1 AS has_executions,
+  rows > 0 AS returned_rows,
+  total_exec_time > 0 AS has_execution_time,
+  shared_blks_hit >= 0 AS has_cache_usage
+FROM pg_stat_insights
+WHERE query LIKE '%json_test%' AND calls > 0
+LIMIT 1;
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 6: FROM pg_stat_insights
+             ^

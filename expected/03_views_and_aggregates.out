@@ -1,0 +1,202 @@
+-- ============================================================================
+-- Test 3: Views and Aggregate Functions
+-- Tests all helper views and their filtering/ordering logic
+-- ============================================================================
+-- Reset and create test data
+SELECT pg_stat_insights_reset();
+ pg_stat_insights_reset 
+------------------------
+ 
+(1 row)
+
+-- Create test table with more data
+CREATE TEMP TABLE performance_test (
+  id serial PRIMARY KEY,
+  category text,
+  value numeric,
+  created_at timestamp DEFAULT '2025-10-31 12:00:00'::timestamp
+);
+-- Insert test data with deterministic values
+SELECT setseed(0.5); -- Set seed for deterministic random values
+ setseed 
+---------
+ 
+(1 row)
+
+INSERT INTO performance_test (category, value)
+SELECT 
+  CASE (i % 3)
+    WHEN 0 THEN 'fast'
+    WHEN 1 THEN 'medium'
+    ELSE 'slow'
+  END,
+  i * 10.5  -- Deterministic values instead of random
+FROM generate_series(1, 100) i;
+-- Run various query patterns
+SELECT COUNT(*) FROM performance_test;
+ count 
+-------
+   100
+(1 row)
+
+SELECT category, COUNT(*), AVG(value) FROM performance_test GROUP BY category ORDER BY category;
+ category | count |         avg          
+----------+-------+----------------------
+ fast     |    33 | 535.5000000000000000
+ medium   |    34 | 530.2500000000000000
+ slow     |    33 | 525.0000000000000000
+(3 rows)
+
+SELECT * FROM performance_test WHERE category = 'fast' ORDER BY value DESC LIMIT 10;
+ id | category | value  |        created_at        
+----+----------+--------+--------------------------
+ 99 | fast     | 1039.5 | Fri Oct 31 12:00:00 2025
+ 96 | fast     | 1008.0 | Fri Oct 31 12:00:00 2025
+ 93 | fast     |  976.5 | Fri Oct 31 12:00:00 2025
+ 90 | fast     |  945.0 | Fri Oct 31 12:00:00 2025
+ 87 | fast     |  913.5 | Fri Oct 31 12:00:00 2025
+ 84 | fast     |  882.0 | Fri Oct 31 12:00:00 2025
+ 81 | fast     |  850.5 | Fri Oct 31 12:00:00 2025
+ 78 | fast     |  819.0 | Fri Oct 31 12:00:00 2025
+ 75 | fast     |  787.5 | Fri Oct 31 12:00:00 2025
+ 72 | fast     |  756.0 | Fri Oct 31 12:00:00 2025
+(10 rows)
+
+SELECT * FROM performance_test WHERE value > 500 ORDER BY id;
+ id  | category | value  |        created_at        
+-----+----------+--------+--------------------------
+  48 | fast     |  504.0 | Fri Oct 31 12:00:00 2025
+  49 | medium   |  514.5 | Fri Oct 31 12:00:00 2025
+  50 | slow     |  525.0 | Fri Oct 31 12:00:00 2025
+  51 | fast     |  535.5 | Fri Oct 31 12:00:00 2025
+  52 | medium   |  546.0 | Fri Oct 31 12:00:00 2025
+  53 | slow     |  556.5 | Fri Oct 31 12:00:00 2025
+  54 | fast     |  567.0 | Fri Oct 31 12:00:00 2025
+  55 | medium   |  577.5 | Fri Oct 31 12:00:00 2025
+  56 | slow     |  588.0 | Fri Oct 31 12:00:00 2025
+  57 | fast     |  598.5 | Fri Oct 31 12:00:00 2025
+  58 | medium   |  609.0 | Fri Oct 31 12:00:00 2025
+  59 | slow     |  619.5 | Fri Oct 31 12:00:00 2025
+  60 | fast     |  630.0 | Fri Oct 31 12:00:00 2025
+  61 | medium   |  640.5 | Fri Oct 31 12:00:00 2025
+  62 | slow     |  651.0 | Fri Oct 31 12:00:00 2025
+  63 | fast     |  661.5 | Fri Oct 31 12:00:00 2025
+  64 | medium   |  672.0 | Fri Oct 31 12:00:00 2025
+  65 | slow     |  682.5 | Fri Oct 31 12:00:00 2025
+  66 | fast     |  693.0 | Fri Oct 31 12:00:00 2025
+  67 | medium   |  703.5 | Fri Oct 31 12:00:00 2025
+  68 | slow     |  714.0 | Fri Oct 31 12:00:00 2025
+  69 | fast     |  724.5 | Fri Oct 31 12:00:00 2025
+  70 | medium   |  735.0 | Fri Oct 31 12:00:00 2025
+  71 | slow     |  745.5 | Fri Oct 31 12:00:00 2025
+  72 | fast     |  756.0 | Fri Oct 31 12:00:00 2025
+  73 | medium   |  766.5 | Fri Oct 31 12:00:00 2025
+  74 | slow     |  777.0 | Fri Oct 31 12:00:00 2025
+  75 | fast     |  787.5 | Fri Oct 31 12:00:00 2025
+  76 | medium   |  798.0 | Fri Oct 31 12:00:00 2025
+  77 | slow     |  808.5 | Fri Oct 31 12:00:00 2025
+  78 | fast     |  819.0 | Fri Oct 31 12:00:00 2025
+  79 | medium   |  829.5 | Fri Oct 31 12:00:00 2025
+  80 | slow     |  840.0 | Fri Oct 31 12:00:00 2025
+  81 | fast     |  850.5 | Fri Oct 31 12:00:00 2025
+  82 | medium   |  861.0 | Fri Oct 31 12:00:00 2025
+  83 | slow     |  871.5 | Fri Oct 31 12:00:00 2025
+  84 | fast     |  882.0 | Fri Oct 31 12:00:00 2025
+  85 | medium   |  892.5 | Fri Oct 31 12:00:00 2025
+  86 | slow     |  903.0 | Fri Oct 31 12:00:00 2025
+  87 | fast     |  913.5 | Fri Oct 31 12:00:00 2025
+  88 | medium   |  924.0 | Fri Oct 31 12:00:00 2025
+  89 | slow     |  934.5 | Fri Oct 31 12:00:00 2025
+  90 | fast     |  945.0 | Fri Oct 31 12:00:00 2025
+  91 | medium   |  955.5 | Fri Oct 31 12:00:00 2025
+  92 | slow     |  966.0 | Fri Oct 31 12:00:00 2025
+  93 | fast     |  976.5 | Fri Oct 31 12:00:00 2025
+  94 | medium   |  987.0 | Fri Oct 31 12:00:00 2025
+  95 | slow     |  997.5 | Fri Oct 31 12:00:00 2025
+  96 | fast     | 1008.0 | Fri Oct 31 12:00:00 2025
+  97 | medium   | 1018.5 | Fri Oct 31 12:00:00 2025
+  98 | slow     | 1029.0 | Fri Oct 31 12:00:00 2025
+  99 | fast     | 1039.5 | Fri Oct 31 12:00:00 2025
+ 100 | medium   | 1050.0 | Fri Oct 31 12:00:00 2025
+(53 rows)
+
+-- Wait for stats
+SELECT pg_sleep(0.1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+-- Test top_by_time view
+SELECT COUNT(*) > 0 AS has_top_by_time FROM pg_stat_insights_top_by_time;
+ has_top_by_time 
+-----------------
+ t
+(1 row)
+
+-- Test top_by_calls view  
+SELECT COUNT(*) > 0 AS has_top_by_calls FROM pg_stat_insights_top_by_calls;
+ has_top_by_calls 
+------------------
+ t
+(1 row)
+
+-- Test top_by_io view
+SELECT COUNT(*) > 0 AS has_top_by_io FROM pg_stat_insights_top_by_io;
+ has_top_by_io 
+---------------
+ t
+(1 row)
+
+-- Test cache misses view
+SELECT COUNT(*) >= 0 AS has_cache_misses FROM pg_stat_insights_top_cache_misses;
+ has_cache_misses 
+------------------
+ t
+(1 row)
+
+-- Test slow queries view
+SELECT COUNT(*) >= 0 AS has_slow_queries FROM pg_stat_insights_slow_queries;
+ has_slow_queries 
+------------------
+ t
+(1 row)
+
+-- Test histogram summary view
+SELECT COUNT(*) > 0 AS has_histogram FROM pg_stat_insights_histogram_summary;
+ has_histogram 
+---------------
+ t
+(1 row)
+
+-- Test bucket view
+SELECT COUNT(*) > 0 AS has_bucket_view FROM pg_stat_insights_by_bucket;
+ has_bucket_view 
+-----------------
+ t
+(1 row)
+
+-- Verify view ordering (top_by_time should be ordered by total_exec_time DESC)
+SELECT 
+  total_exec_time >= LEAD(total_exec_time) OVER () OR LEAD(total_exec_time) OVER () IS NULL AS is_ordered
+FROM pg_stat_insights_top_by_time
+LIMIT 5;
+ is_ordered 
+------------
+ t
+ t
+ t
+ t
+ t
+(5 rows)
+
+-- Verify cache hit ratio calculation
+SELECT 
+  cache_hit_ratio >= 0 AND cache_hit_ratio <= 1 AS ratio_valid
+FROM pg_stat_insights_top_cache_misses
+WHERE cache_hit_ratio IS NOT NULL
+LIMIT 1;
+ ratio_valid 
+-------------
+(0 rows)
+

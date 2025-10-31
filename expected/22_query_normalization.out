@@ -1,0 +1,2093 @@
+-- ============================================================================
+-- Test 22: Query Normalization Edge Cases
+-- Tests query normalization and parameterization
+-- ============================================================================
+-- Reset statistics
+SELECT pg_stat_insights_reset();
+ERROR:  function pg_stat_insights_reset() does not exist
+LINE 1: SELECT pg_stat_insights_reset();
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+-- Create test table
+SELECT setseed(0.5);
+ setseed 
+---------
+ 
+(1 row)
+
+CREATE TEMP TABLE norm_test (
+  id serial PRIMARY KEY,
+  name text NOT NULL,
+  value numeric NOT NULL,
+  status text DEFAULT 'active',
+  tags text[],
+  created_at timestamp DEFAULT '2025-10-31 12:00:00'::timestamp
+);
+-- Insert deterministic data
+INSERT INTO norm_test (name, value, status, tags)
+SELECT 
+  'item_' || i,
+  (i * 10.5)::numeric,
+  CASE (i % 3) WHEN 0 THEN 'active' WHEN 1 THEN 'inactive' ELSE 'pending' END,
+  ARRAY['tag' || (i % 10), 'cat' || (i % 5)]
+FROM generate_series(1, 300) i;
+-- Test queries with different literal values (should normalize to same queryid)
+SELECT * FROM norm_test WHERE id = 1;
+ id |  name  | value |  status  |    tags     |        created_at        
+----+--------+-------+----------+-------------+--------------------------
+  1 | item_1 |  10.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+SELECT * FROM norm_test WHERE id = 2;
+ id |  name  | value | status  |    tags     |        created_at        
+----+--------+-------+---------+-------------+--------------------------
+  2 | item_2 |  21.0 | pending | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+SELECT * FROM norm_test WHERE id = 3;
+ id |  name  | value | status |    tags     |        created_at        
+----+--------+-------+--------+-------------+--------------------------
+  3 | item_3 |  31.5 | active | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+SELECT * FROM norm_test WHERE id = 10;
+ id |  name   | value |  status  |    tags     |        created_at        
+----+---------+-------+----------+-------------+--------------------------
+ 10 | item_10 | 105.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+SELECT * FROM norm_test WHERE id = 50;
+ id |  name   | value | status  |    tags     |        created_at        
+----+---------+-------+---------+-------------+--------------------------
+ 50 | item_50 | 525.0 | pending | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+SELECT * FROM norm_test WHERE id = 100;
+ id  |   name   | value  |  status  |    tags     |        created_at        
+-----+----------+--------+----------+-------------+--------------------------
+ 100 | item_100 | 1050.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+-- Test queries with different string literals
+SELECT * FROM norm_test WHERE name = 'item_1';
+ id |  name  | value |  status  |    tags     |        created_at        
+----+--------+-------+----------+-------------+--------------------------
+  1 | item_1 |  10.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+SELECT * FROM norm_test WHERE name = 'item_2';
+ id |  name  | value | status  |    tags     |        created_at        
+----+--------+-------+---------+-------------+--------------------------
+  2 | item_2 |  21.0 | pending | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+SELECT * FROM norm_test WHERE name = 'item_3';
+ id |  name  | value | status |    tags     |        created_at        
+----+--------+-------+--------+-------------+--------------------------
+  3 | item_3 |  31.5 | active | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+SELECT * FROM norm_test WHERE name = 'item_100';
+ id  |   name   | value  |  status  |    tags     |        created_at        
+-----+----------+--------+----------+-------------+--------------------------
+ 100 | item_100 | 1050.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+-- Test queries with different numeric values
+SELECT * FROM norm_test WHERE value = 10.5;
+ id |  name  | value |  status  |    tags     |        created_at        
+----+--------+-------+----------+-------------+--------------------------
+  1 | item_1 |  10.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+SELECT * FROM norm_test WHERE value = 21.0;
+ id |  name  | value | status  |    tags     |        created_at        
+----+--------+-------+---------+-------------+--------------------------
+  2 | item_2 |  21.0 | pending | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+SELECT * FROM norm_test WHERE value = 31.5;
+ id |  name  | value | status |    tags     |        created_at        
+----+--------+-------+--------+-------------+--------------------------
+  3 | item_3 |  31.5 | active | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+SELECT * FROM norm_test WHERE value = 105.0;
+ id |  name   | value |  status  |    tags     |        created_at        
+----+---------+-------+----------+-------------+--------------------------
+ 10 | item_10 | 105.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+-- Test queries with IN clauses
+SELECT * FROM norm_test WHERE id IN (1, 2, 3);
+ id |  name  | value |  status  |    tags     |        created_at        
+----+--------+-------+----------+-------------+--------------------------
+  1 | item_1 |  10.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  2 | item_2 |  21.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  3 | item_3 |  31.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+(3 rows)
+
+SELECT * FROM norm_test WHERE id IN (10, 20, 30);
+ id |  name   | value |  status  |    tags     |        created_at        
+----+---------+-------+----------+-------------+--------------------------
+ 10 | item_10 | 105.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 20 | item_20 | 210.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 30 | item_30 | 315.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+(3 rows)
+
+SELECT * FROM norm_test WHERE id IN (100, 200, 300);
+ id  |   name   | value  |  status  |    tags     |        created_at        
+-----+----------+--------+----------+-------------+--------------------------
+ 100 | item_100 | 1050.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 200 | item_200 | 2100.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 300 | item_300 | 3150.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+(3 rows)
+
+-- Test queries with BETWEEN
+SELECT * FROM norm_test WHERE value BETWEEN 10 AND 20;
+ id |  name  | value |  status  |    tags     |        created_at        
+----+--------+-------+----------+-------------+--------------------------
+  1 | item_1 |  10.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+SELECT * FROM norm_test WHERE value BETWEEN 50 AND 60;
+ id |  name  | value | status  |    tags     |        created_at        
+----+--------+-------+---------+-------------+--------------------------
+  5 | item_5 |  52.5 | pending | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+SELECT * FROM norm_test WHERE value BETWEEN 100 AND 200;
+ id |  name   | value |  status  |    tags     |        created_at        
+----+---------+-------+----------+-------------+--------------------------
+ 10 | item_10 | 105.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 11 | item_11 | 115.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 12 | item_12 | 126.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 13 | item_13 | 136.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 14 | item_14 | 147.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 15 | item_15 | 157.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 16 | item_16 | 168.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 17 | item_17 | 178.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 18 | item_18 | 189.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 19 | item_19 | 199.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+(10 rows)
+
+-- Test queries with LIKE patterns (should normalize differently)
+SELECT * FROM norm_test WHERE name LIKE 'item_1%';
+ id  |   name   | value  |  status  |    tags     |        created_at        
+-----+----------+--------+----------+-------------+--------------------------
+   1 | item_1   |   10.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  10 | item_10  |  105.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  11 | item_11  |  115.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  12 | item_12  |  126.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  13 | item_13  |  136.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  14 | item_14  |  147.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  15 | item_15  |  157.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  16 | item_16  |  168.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  17 | item_17  |  178.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  18 | item_18  |  189.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  19 | item_19  |  199.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 100 | item_100 | 1050.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 101 | item_101 | 1060.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 102 | item_102 | 1071.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 103 | item_103 | 1081.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 104 | item_104 | 1092.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 105 | item_105 | 1102.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 106 | item_106 | 1113.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 107 | item_107 | 1123.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 108 | item_108 | 1134.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 109 | item_109 | 1144.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 110 | item_110 | 1155.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 111 | item_111 | 1165.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 112 | item_112 | 1176.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 113 | item_113 | 1186.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 114 | item_114 | 1197.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 115 | item_115 | 1207.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 116 | item_116 | 1218.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 117 | item_117 | 1228.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 118 | item_118 | 1239.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 119 | item_119 | 1249.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 120 | item_120 | 1260.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 121 | item_121 | 1270.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 122 | item_122 | 1281.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 123 | item_123 | 1291.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 124 | item_124 | 1302.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 125 | item_125 | 1312.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 126 | item_126 | 1323.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 127 | item_127 | 1333.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 128 | item_128 | 1344.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 129 | item_129 | 1354.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 130 | item_130 | 1365.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 131 | item_131 | 1375.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 132 | item_132 | 1386.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 133 | item_133 | 1396.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 134 | item_134 | 1407.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 135 | item_135 | 1417.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 136 | item_136 | 1428.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 137 | item_137 | 1438.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 138 | item_138 | 1449.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 139 | item_139 | 1459.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 140 | item_140 | 1470.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 141 | item_141 | 1480.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 142 | item_142 | 1491.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 143 | item_143 | 1501.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 144 | item_144 | 1512.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 145 | item_145 | 1522.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 146 | item_146 | 1533.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 147 | item_147 | 1543.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 148 | item_148 | 1554.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 149 | item_149 | 1564.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 150 | item_150 | 1575.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 151 | item_151 | 1585.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 152 | item_152 | 1596.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 153 | item_153 | 1606.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 154 | item_154 | 1617.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 155 | item_155 | 1627.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 156 | item_156 | 1638.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 157 | item_157 | 1648.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 158 | item_158 | 1659.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 159 | item_159 | 1669.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 160 | item_160 | 1680.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 161 | item_161 | 1690.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 162 | item_162 | 1701.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 163 | item_163 | 1711.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 164 | item_164 | 1722.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 165 | item_165 | 1732.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 166 | item_166 | 1743.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 167 | item_167 | 1753.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 168 | item_168 | 1764.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 169 | item_169 | 1774.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 170 | item_170 | 1785.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 171 | item_171 | 1795.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 172 | item_172 | 1806.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 173 | item_173 | 1816.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 174 | item_174 | 1827.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 175 | item_175 | 1837.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 176 | item_176 | 1848.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 177 | item_177 | 1858.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 178 | item_178 | 1869.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 179 | item_179 | 1879.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 180 | item_180 | 1890.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 181 | item_181 | 1900.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 182 | item_182 | 1911.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 183 | item_183 | 1921.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 184 | item_184 | 1932.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 185 | item_185 | 1942.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 186 | item_186 | 1953.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 187 | item_187 | 1963.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 188 | item_188 | 1974.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 189 | item_189 | 1984.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 190 | item_190 | 1995.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 191 | item_191 | 2005.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 192 | item_192 | 2016.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 193 | item_193 | 2026.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 194 | item_194 | 2037.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 195 | item_195 | 2047.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 196 | item_196 | 2058.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 197 | item_197 | 2068.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 198 | item_198 | 2079.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 199 | item_199 | 2089.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+(111 rows)
+
+SELECT * FROM norm_test WHERE name LIKE 'item_2%';
+ id  |   name   | value  |  status  |    tags     |        created_at        
+-----+----------+--------+----------+-------------+--------------------------
+   2 | item_2   |   21.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  20 | item_20  |  210.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  21 | item_21  |  220.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  22 | item_22  |  231.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  23 | item_23  |  241.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  24 | item_24  |  252.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  25 | item_25  |  262.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  26 | item_26  |  273.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  27 | item_27  |  283.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  28 | item_28  |  294.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  29 | item_29  |  304.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 200 | item_200 | 2100.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 201 | item_201 | 2110.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 202 | item_202 | 2121.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 203 | item_203 | 2131.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 204 | item_204 | 2142.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 205 | item_205 | 2152.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 206 | item_206 | 2163.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 207 | item_207 | 2173.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 208 | item_208 | 2184.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 209 | item_209 | 2194.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 210 | item_210 | 2205.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 211 | item_211 | 2215.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 212 | item_212 | 2226.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 213 | item_213 | 2236.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 214 | item_214 | 2247.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 215 | item_215 | 2257.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 216 | item_216 | 2268.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 217 | item_217 | 2278.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 218 | item_218 | 2289.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 219 | item_219 | 2299.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 220 | item_220 | 2310.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 221 | item_221 | 2320.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 222 | item_222 | 2331.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 223 | item_223 | 2341.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 224 | item_224 | 2352.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 225 | item_225 | 2362.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 226 | item_226 | 2373.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 227 | item_227 | 2383.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 228 | item_228 | 2394.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 229 | item_229 | 2404.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 230 | item_230 | 2415.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 231 | item_231 | 2425.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 232 | item_232 | 2436.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 233 | item_233 | 2446.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 234 | item_234 | 2457.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 235 | item_235 | 2467.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 236 | item_236 | 2478.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 237 | item_237 | 2488.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 238 | item_238 | 2499.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 239 | item_239 | 2509.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 240 | item_240 | 2520.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 241 | item_241 | 2530.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 242 | item_242 | 2541.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 243 | item_243 | 2551.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 244 | item_244 | 2562.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 245 | item_245 | 2572.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 246 | item_246 | 2583.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 247 | item_247 | 2593.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 248 | item_248 | 2604.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 249 | item_249 | 2614.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 250 | item_250 | 2625.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 251 | item_251 | 2635.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 252 | item_252 | 2646.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 253 | item_253 | 2656.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 254 | item_254 | 2667.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 255 | item_255 | 2677.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 256 | item_256 | 2688.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 257 | item_257 | 2698.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 258 | item_258 | 2709.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 259 | item_259 | 2719.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 260 | item_260 | 2730.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 261 | item_261 | 2740.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 262 | item_262 | 2751.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 263 | item_263 | 2761.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 264 | item_264 | 2772.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 265 | item_265 | 2782.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 266 | item_266 | 2793.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 267 | item_267 | 2803.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 268 | item_268 | 2814.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 269 | item_269 | 2824.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 270 | item_270 | 2835.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 271 | item_271 | 2845.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 272 | item_272 | 2856.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 273 | item_273 | 2866.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 274 | item_274 | 2877.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 275 | item_275 | 2887.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 276 | item_276 | 2898.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 277 | item_277 | 2908.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 278 | item_278 | 2919.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 279 | item_279 | 2929.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 280 | item_280 | 2940.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 281 | item_281 | 2950.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 282 | item_282 | 2961.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 283 | item_283 | 2971.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 284 | item_284 | 2982.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 285 | item_285 | 2992.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 286 | item_286 | 3003.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 287 | item_287 | 3013.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 288 | item_288 | 3024.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 289 | item_289 | 3034.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 290 | item_290 | 3045.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 291 | item_291 | 3055.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 292 | item_292 | 3066.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 293 | item_293 | 3076.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 294 | item_294 | 3087.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 295 | item_295 | 3097.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 296 | item_296 | 3108.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 297 | item_297 | 3118.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 298 | item_298 | 3129.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 299 | item_299 | 3139.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+(111 rows)
+
+SELECT * FROM norm_test WHERE name LIKE 'item_%';
+ id  |   name   | value  |  status  |    tags     |        created_at        
+-----+----------+--------+----------+-------------+--------------------------
+   1 | item_1   |   10.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+   2 | item_2   |   21.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+   3 | item_3   |   31.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+   4 | item_4   |   42.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+   5 | item_5   |   52.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+   6 | item_6   |   63.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+   7 | item_7   |   73.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+   8 | item_8   |   84.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+   9 | item_9   |   94.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  10 | item_10  |  105.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  11 | item_11  |  115.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  12 | item_12  |  126.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  13 | item_13  |  136.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  14 | item_14  |  147.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  15 | item_15  |  157.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  16 | item_16  |  168.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  17 | item_17  |  178.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  18 | item_18  |  189.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  19 | item_19  |  199.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  20 | item_20  |  210.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  21 | item_21  |  220.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  22 | item_22  |  231.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  23 | item_23  |  241.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  24 | item_24  |  252.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  25 | item_25  |  262.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  26 | item_26  |  273.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  27 | item_27  |  283.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  28 | item_28  |  294.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  29 | item_29  |  304.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  30 | item_30  |  315.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  31 | item_31  |  325.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  32 | item_32  |  336.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  33 | item_33  |  346.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  34 | item_34  |  357.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  35 | item_35  |  367.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  36 | item_36  |  378.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  37 | item_37  |  388.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  38 | item_38  |  399.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  39 | item_39  |  409.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  40 | item_40  |  420.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  41 | item_41  |  430.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  42 | item_42  |  441.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  43 | item_43  |  451.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  44 | item_44  |  462.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  45 | item_45  |  472.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  46 | item_46  |  483.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  47 | item_47  |  493.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  48 | item_48  |  504.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  49 | item_49  |  514.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  50 | item_50  |  525.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  51 | item_51  |  535.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  52 | item_52  |  546.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  53 | item_53  |  556.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  54 | item_54  |  567.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  55 | item_55  |  577.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  56 | item_56  |  588.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  57 | item_57  |  598.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  58 | item_58  |  609.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  59 | item_59  |  619.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  60 | item_60  |  630.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  61 | item_61  |  640.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  62 | item_62  |  651.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  63 | item_63  |  661.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  64 | item_64  |  672.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  65 | item_65  |  682.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  66 | item_66  |  693.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  67 | item_67  |  703.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  68 | item_68  |  714.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  69 | item_69  |  724.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  70 | item_70  |  735.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  71 | item_71  |  745.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  72 | item_72  |  756.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  73 | item_73  |  766.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  74 | item_74  |  777.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  75 | item_75  |  787.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  76 | item_76  |  798.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  77 | item_77  |  808.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  78 | item_78  |  819.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  79 | item_79  |  829.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  80 | item_80  |  840.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  81 | item_81  |  850.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  82 | item_82  |  861.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  83 | item_83  |  871.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  84 | item_84  |  882.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  85 | item_85  |  892.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  86 | item_86  |  903.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  87 | item_87  |  913.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  88 | item_88  |  924.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  89 | item_89  |  934.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  90 | item_90  |  945.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  91 | item_91  |  955.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  92 | item_92  |  966.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  93 | item_93  |  976.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  94 | item_94  |  987.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  95 | item_95  |  997.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  96 | item_96  | 1008.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  97 | item_97  | 1018.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  98 | item_98  | 1029.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  99 | item_99  | 1039.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 100 | item_100 | 1050.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 101 | item_101 | 1060.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 102 | item_102 | 1071.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 103 | item_103 | 1081.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 104 | item_104 | 1092.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 105 | item_105 | 1102.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 106 | item_106 | 1113.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 107 | item_107 | 1123.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 108 | item_108 | 1134.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 109 | item_109 | 1144.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 110 | item_110 | 1155.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 111 | item_111 | 1165.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 112 | item_112 | 1176.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 113 | item_113 | 1186.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 114 | item_114 | 1197.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 115 | item_115 | 1207.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 116 | item_116 | 1218.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 117 | item_117 | 1228.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 118 | item_118 | 1239.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 119 | item_119 | 1249.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 120 | item_120 | 1260.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 121 | item_121 | 1270.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 122 | item_122 | 1281.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 123 | item_123 | 1291.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 124 | item_124 | 1302.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 125 | item_125 | 1312.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 126 | item_126 | 1323.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 127 | item_127 | 1333.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 128 | item_128 | 1344.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 129 | item_129 | 1354.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 130 | item_130 | 1365.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 131 | item_131 | 1375.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 132 | item_132 | 1386.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 133 | item_133 | 1396.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 134 | item_134 | 1407.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 135 | item_135 | 1417.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 136 | item_136 | 1428.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 137 | item_137 | 1438.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 138 | item_138 | 1449.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 139 | item_139 | 1459.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 140 | item_140 | 1470.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 141 | item_141 | 1480.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 142 | item_142 | 1491.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 143 | item_143 | 1501.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 144 | item_144 | 1512.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 145 | item_145 | 1522.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 146 | item_146 | 1533.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 147 | item_147 | 1543.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 148 | item_148 | 1554.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 149 | item_149 | 1564.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 150 | item_150 | 1575.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 151 | item_151 | 1585.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 152 | item_152 | 1596.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 153 | item_153 | 1606.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 154 | item_154 | 1617.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 155 | item_155 | 1627.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 156 | item_156 | 1638.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 157 | item_157 | 1648.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 158 | item_158 | 1659.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 159 | item_159 | 1669.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 160 | item_160 | 1680.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 161 | item_161 | 1690.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 162 | item_162 | 1701.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 163 | item_163 | 1711.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 164 | item_164 | 1722.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 165 | item_165 | 1732.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 166 | item_166 | 1743.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 167 | item_167 | 1753.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 168 | item_168 | 1764.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 169 | item_169 | 1774.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 170 | item_170 | 1785.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 171 | item_171 | 1795.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 172 | item_172 | 1806.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 173 | item_173 | 1816.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 174 | item_174 | 1827.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 175 | item_175 | 1837.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 176 | item_176 | 1848.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 177 | item_177 | 1858.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 178 | item_178 | 1869.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 179 | item_179 | 1879.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 180 | item_180 | 1890.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 181 | item_181 | 1900.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 182 | item_182 | 1911.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 183 | item_183 | 1921.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 184 | item_184 | 1932.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 185 | item_185 | 1942.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 186 | item_186 | 1953.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 187 | item_187 | 1963.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 188 | item_188 | 1974.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 189 | item_189 | 1984.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 190 | item_190 | 1995.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 191 | item_191 | 2005.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 192 | item_192 | 2016.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 193 | item_193 | 2026.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 194 | item_194 | 2037.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 195 | item_195 | 2047.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 196 | item_196 | 2058.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 197 | item_197 | 2068.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 198 | item_198 | 2079.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 199 | item_199 | 2089.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 200 | item_200 | 2100.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 201 | item_201 | 2110.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 202 | item_202 | 2121.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 203 | item_203 | 2131.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 204 | item_204 | 2142.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 205 | item_205 | 2152.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 206 | item_206 | 2163.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 207 | item_207 | 2173.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 208 | item_208 | 2184.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 209 | item_209 | 2194.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 210 | item_210 | 2205.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 211 | item_211 | 2215.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 212 | item_212 | 2226.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 213 | item_213 | 2236.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 214 | item_214 | 2247.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 215 | item_215 | 2257.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 216 | item_216 | 2268.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 217 | item_217 | 2278.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 218 | item_218 | 2289.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 219 | item_219 | 2299.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 220 | item_220 | 2310.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 221 | item_221 | 2320.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 222 | item_222 | 2331.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 223 | item_223 | 2341.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 224 | item_224 | 2352.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 225 | item_225 | 2362.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 226 | item_226 | 2373.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 227 | item_227 | 2383.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 228 | item_228 | 2394.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 229 | item_229 | 2404.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 230 | item_230 | 2415.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 231 | item_231 | 2425.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 232 | item_232 | 2436.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 233 | item_233 | 2446.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 234 | item_234 | 2457.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 235 | item_235 | 2467.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 236 | item_236 | 2478.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 237 | item_237 | 2488.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 238 | item_238 | 2499.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 239 | item_239 | 2509.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 240 | item_240 | 2520.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 241 | item_241 | 2530.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 242 | item_242 | 2541.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 243 | item_243 | 2551.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 244 | item_244 | 2562.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 245 | item_245 | 2572.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 246 | item_246 | 2583.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 247 | item_247 | 2593.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 248 | item_248 | 2604.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 249 | item_249 | 2614.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 250 | item_250 | 2625.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 251 | item_251 | 2635.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 252 | item_252 | 2646.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 253 | item_253 | 2656.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 254 | item_254 | 2667.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 255 | item_255 | 2677.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 256 | item_256 | 2688.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 257 | item_257 | 2698.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 258 | item_258 | 2709.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 259 | item_259 | 2719.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 260 | item_260 | 2730.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 261 | item_261 | 2740.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 262 | item_262 | 2751.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 263 | item_263 | 2761.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 264 | item_264 | 2772.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 265 | item_265 | 2782.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 266 | item_266 | 2793.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 267 | item_267 | 2803.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 268 | item_268 | 2814.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 269 | item_269 | 2824.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 270 | item_270 | 2835.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 271 | item_271 | 2845.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 272 | item_272 | 2856.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 273 | item_273 | 2866.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 274 | item_274 | 2877.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 275 | item_275 | 2887.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 276 | item_276 | 2898.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 277 | item_277 | 2908.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 278 | item_278 | 2919.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 279 | item_279 | 2929.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 280 | item_280 | 2940.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 281 | item_281 | 2950.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 282 | item_282 | 2961.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 283 | item_283 | 2971.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 284 | item_284 | 2982.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 285 | item_285 | 2992.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 286 | item_286 | 3003.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 287 | item_287 | 3013.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 288 | item_288 | 3024.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 289 | item_289 | 3034.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 290 | item_290 | 3045.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 291 | item_291 | 3055.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 292 | item_292 | 3066.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 293 | item_293 | 3076.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 294 | item_294 | 3087.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 295 | item_295 | 3097.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 296 | item_296 | 3108.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 297 | item_297 | 3118.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 298 | item_298 | 3129.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 299 | item_299 | 3139.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 300 | item_300 | 3150.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+(300 rows)
+
+-- Test queries with array operations
+SELECT * FROM norm_test WHERE tags @> ARRAY['tag1'];
+ id  |   name   | value  |  status  |    tags     |        created_at        
+-----+----------+--------+----------+-------------+--------------------------
+   1 | item_1   |   10.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  11 | item_11  |  115.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  21 | item_21  |  220.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  31 | item_31  |  325.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  41 | item_41  |  430.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  51 | item_51  |  535.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  61 | item_61  |  640.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  71 | item_71  |  745.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  81 | item_81  |  850.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  91 | item_91  |  955.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 101 | item_101 | 1060.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 111 | item_111 | 1165.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 121 | item_121 | 1270.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 131 | item_131 | 1375.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 141 | item_141 | 1480.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 151 | item_151 | 1585.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 161 | item_161 | 1690.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 171 | item_171 | 1795.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 181 | item_181 | 1900.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 191 | item_191 | 2005.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 201 | item_201 | 2110.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 211 | item_211 | 2215.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 221 | item_221 | 2320.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 231 | item_231 | 2425.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 241 | item_241 | 2530.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 251 | item_251 | 2635.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 261 | item_261 | 2740.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 271 | item_271 | 2845.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 281 | item_281 | 2950.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 291 | item_291 | 3055.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+(30 rows)
+
+SELECT * FROM norm_test WHERE tags @> ARRAY['tag2'];
+ id  |   name   | value  |  status  |    tags     |        created_at        
+-----+----------+--------+----------+-------------+--------------------------
+   2 | item_2   |   21.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  12 | item_12  |  126.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  22 | item_22  |  231.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  32 | item_32  |  336.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  42 | item_42  |  441.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  52 | item_52  |  546.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  62 | item_62  |  651.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  72 | item_72  |  756.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  82 | item_82  |  861.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  92 | item_92  |  966.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 102 | item_102 | 1071.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 112 | item_112 | 1176.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 122 | item_122 | 1281.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 132 | item_132 | 1386.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 142 | item_142 | 1491.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 152 | item_152 | 1596.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 162 | item_162 | 1701.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 172 | item_172 | 1806.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 182 | item_182 | 1911.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 192 | item_192 | 2016.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 202 | item_202 | 2121.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 212 | item_212 | 2226.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 222 | item_222 | 2331.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 232 | item_232 | 2436.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 242 | item_242 | 2541.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 252 | item_252 | 2646.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 262 | item_262 | 2751.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 272 | item_272 | 2856.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 282 | item_282 | 2961.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 292 | item_292 | 3066.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+(30 rows)
+
+SELECT * FROM norm_test WHERE tags @> ARRAY['tag5'];
+ id  |   name   | value  |  status  |    tags     |        created_at        
+-----+----------+--------+----------+-------------+--------------------------
+   5 | item_5   |   52.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  15 | item_15  |  157.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  25 | item_25  |  262.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  35 | item_35  |  367.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  45 | item_45  |  472.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  55 | item_55  |  577.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  65 | item_65  |  682.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  75 | item_75  |  787.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  85 | item_85  |  892.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  95 | item_95  |  997.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 105 | item_105 | 1102.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 115 | item_115 | 1207.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 125 | item_125 | 1312.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 135 | item_135 | 1417.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 145 | item_145 | 1522.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 155 | item_155 | 1627.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 165 | item_165 | 1732.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 175 | item_175 | 1837.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 185 | item_185 | 1942.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 195 | item_195 | 2047.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 205 | item_205 | 2152.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 215 | item_215 | 2257.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 225 | item_225 | 2362.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 235 | item_235 | 2467.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 245 | item_245 | 2572.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 255 | item_255 | 2677.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 265 | item_265 | 2782.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 275 | item_275 | 2887.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 285 | item_285 | 2992.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 295 | item_295 | 3097.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+(30 rows)
+
+-- Test queries with multiple WHERE conditions
+SELECT * FROM norm_test WHERE id = 1 AND status = 'active';
+ id | name | value | status | tags | created_at 
+----+------+-------+--------+------+------------
+(0 rows)
+
+SELECT * FROM norm_test WHERE id = 2 AND status = 'inactive';
+ id | name | value | status | tags | created_at 
+----+------+-------+--------+------+------------
+(0 rows)
+
+SELECT * FROM norm_test WHERE id = 3 AND status = 'pending';
+ id | name | value | status | tags | created_at 
+----+------+-------+--------+------+------------
+(0 rows)
+
+-- Test queries with ORDER BY different columns
+SELECT * FROM norm_test WHERE value > 100 ORDER BY id LIMIT 10;
+ id |  name   | value |  status  |    tags     |        created_at        
+----+---------+-------+----------+-------------+--------------------------
+ 10 | item_10 | 105.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 11 | item_11 | 115.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 12 | item_12 | 126.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 13 | item_13 | 136.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 14 | item_14 | 147.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 15 | item_15 | 157.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 16 | item_16 | 168.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 17 | item_17 | 178.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 18 | item_18 | 189.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 19 | item_19 | 199.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+(10 rows)
+
+SELECT * FROM norm_test WHERE value > 100 ORDER BY name LIMIT 10;
+ id  |   name   | value  |  status  |    tags     |        created_at        
+-----+----------+--------+----------+-------------+--------------------------
+  10 | item_10  |  105.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 100 | item_100 | 1050.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 101 | item_101 | 1060.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 102 | item_102 | 1071.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 103 | item_103 | 1081.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 104 | item_104 | 1092.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 105 | item_105 | 1102.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 106 | item_106 | 1113.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 107 | item_107 | 1123.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 108 | item_108 | 1134.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+(10 rows)
+
+SELECT * FROM norm_test WHERE value > 100 ORDER BY value LIMIT 10;
+ id |  name   | value |  status  |    tags     |        created_at        
+----+---------+-------+----------+-------------+--------------------------
+ 10 | item_10 | 105.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 11 | item_11 | 115.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 12 | item_12 | 126.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 13 | item_13 | 136.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 14 | item_14 | 147.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 15 | item_15 | 157.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 16 | item_16 | 168.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 17 | item_17 | 178.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 18 | item_18 | 189.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 19 | item_19 | 199.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+(10 rows)
+
+-- Test queries with different LIMIT values (should normalize to same)
+SELECT * FROM norm_test WHERE value > 50 LIMIT 10;
+ id |  name   | value |  status  |    tags     |        created_at        
+----+---------+-------+----------+-------------+--------------------------
+  5 | item_5  |  52.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  6 | item_6  |  63.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  7 | item_7  |  73.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  8 | item_8  |  84.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  9 | item_9  |  94.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 10 | item_10 | 105.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 11 | item_11 | 115.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 12 | item_12 | 126.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 13 | item_13 | 136.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 14 | item_14 | 147.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+(10 rows)
+
+SELECT * FROM norm_test WHERE value > 50 LIMIT 20;
+ id |  name   | value |  status  |    tags     |        created_at        
+----+---------+-------+----------+-------------+--------------------------
+  5 | item_5  |  52.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  6 | item_6  |  63.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  7 | item_7  |  73.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  8 | item_8  |  84.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  9 | item_9  |  94.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 10 | item_10 | 105.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 11 | item_11 | 115.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 12 | item_12 | 126.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 13 | item_13 | 136.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 14 | item_14 | 147.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 15 | item_15 | 157.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 16 | item_16 | 168.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 17 | item_17 | 178.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 18 | item_18 | 189.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 19 | item_19 | 199.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 20 | item_20 | 210.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 21 | item_21 | 220.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 22 | item_22 | 231.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 23 | item_23 | 241.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 24 | item_24 | 252.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+(20 rows)
+
+SELECT * FROM norm_test WHERE value > 50 LIMIT 30;
+ id |  name   | value |  status  |    tags     |        created_at        
+----+---------+-------+----------+-------------+--------------------------
+  5 | item_5  |  52.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  6 | item_6  |  63.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  7 | item_7  |  73.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  8 | item_8  |  84.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  9 | item_9  |  94.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 10 | item_10 | 105.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 11 | item_11 | 115.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 12 | item_12 | 126.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 13 | item_13 | 136.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 14 | item_14 | 147.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 15 | item_15 | 157.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 16 | item_16 | 168.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 17 | item_17 | 178.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 18 | item_18 | 189.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 19 | item_19 | 199.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 20 | item_20 | 210.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 21 | item_21 | 220.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 22 | item_22 | 231.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 23 | item_23 | 241.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 24 | item_24 | 252.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 25 | item_25 | 262.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 26 | item_26 | 273.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 27 | item_27 | 283.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 28 | item_28 | 294.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 29 | item_29 | 304.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 30 | item_30 | 315.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 31 | item_31 | 325.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 32 | item_32 | 336.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 33 | item_33 | 346.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 34 | item_34 | 357.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+(30 rows)
+
+-- Test queries with different OFFSET values
+SELECT * FROM norm_test WHERE value > 50 LIMIT 10 OFFSET 0;
+ id |  name   | value |  status  |    tags     |        created_at        
+----+---------+-------+----------+-------------+--------------------------
+  5 | item_5  |  52.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  6 | item_6  |  63.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  7 | item_7  |  73.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  8 | item_8  |  84.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  9 | item_9  |  94.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 10 | item_10 | 105.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 11 | item_11 | 115.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 12 | item_12 | 126.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 13 | item_13 | 136.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 14 | item_14 | 147.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+(10 rows)
+
+SELECT * FROM norm_test WHERE value > 50 LIMIT 10 OFFSET 10;
+ id |  name   | value |  status  |    tags     |        created_at        
+----+---------+-------+----------+-------------+--------------------------
+ 15 | item_15 | 157.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 16 | item_16 | 168.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 17 | item_17 | 178.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 18 | item_18 | 189.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 19 | item_19 | 199.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 20 | item_20 | 210.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 21 | item_21 | 220.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 22 | item_22 | 231.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 23 | item_23 | 241.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 24 | item_24 | 252.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+(10 rows)
+
+SELECT * FROM norm_test WHERE value > 50 LIMIT 10 OFFSET 20;
+ id |  name   | value |  status  |    tags     |        created_at        
+----+---------+-------+----------+-------------+--------------------------
+ 25 | item_25 | 262.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 26 | item_26 | 273.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 27 | item_27 | 283.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 28 | item_28 | 294.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 29 | item_29 | 304.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 30 | item_30 | 315.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 31 | item_31 | 325.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 32 | item_32 | 336.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 33 | item_33 | 346.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 34 | item_34 | 357.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+(10 rows)
+
+-- Test queries with CASE expressions
+SELECT 
+  id,
+  name,
+  CASE WHEN value > 100 THEN 'high' ELSE 'low' END AS category
+FROM norm_test
+WHERE id = 1;
+ id |  name  | category 
+----+--------+----------
+  1 | item_1 | low
+(1 row)
+
+SELECT 
+  id,
+  name,
+  CASE WHEN value > 200 THEN 'very_high' WHEN value > 100 THEN 'high' ELSE 'low' END AS category
+FROM norm_test
+WHERE id = 2;
+ id |  name  | category 
+----+--------+----------
+  2 | item_2 | low
+(1 row)
+
+-- Test queries with COALESCE
+SELECT id, name, COALESCE(status, 'unknown') AS status_val FROM norm_test WHERE id = 1;
+ id |  name  | status_val 
+----+--------+------------
+  1 | item_1 | inactive
+(1 row)
+
+SELECT id, name, COALESCE(status, 'unknown') AS status_val FROM norm_test WHERE id = 2;
+ id |  name  | status_val 
+----+--------+------------
+  2 | item_2 | pending
+(1 row)
+
+-- Test queries with NULLIF
+SELECT id, name, NULLIF(status, 'active') AS status_val FROM norm_test WHERE id = 1;
+ id |  name  | status_val 
+----+--------+------------
+  1 | item_1 | inactive
+(1 row)
+
+SELECT id, name, NULLIF(status, 'inactive') AS status_val FROM norm_test WHERE id = 2;
+ id |  name  | status_val 
+----+--------+------------
+  2 | item_2 | pending
+(1 row)
+
+-- Test queries with functions
+SELECT * FROM norm_test WHERE UPPER(name) = 'ITEM_1';
+ id |  name  | value |  status  |    tags     |        created_at        
+----+--------+-------+----------+-------------+--------------------------
+  1 | item_1 |  10.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+SELECT * FROM norm_test WHERE UPPER(name) = 'ITEM_2';
+ id |  name  | value | status  |    tags     |        created_at        
+----+--------+-------+---------+-------------+--------------------------
+  2 | item_2 |  21.0 | pending | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+(1 row)
+
+SELECT * FROM norm_test WHERE LENGTH(name) = 6;
+ id |  name  | value |  status  |    tags     |        created_at        
+----+--------+-------+----------+-------------+--------------------------
+  1 | item_1 |  10.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  2 | item_2 |  21.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  3 | item_3 |  31.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  4 | item_4 |  42.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  5 | item_5 |  52.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  6 | item_6 |  63.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  7 | item_7 |  73.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  8 | item_8 |  84.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  9 | item_9 |  94.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+(9 rows)
+
+-- Test queries with date/time functions
+SELECT * FROM norm_test WHERE created_at > '2025-10-30'::timestamp;
+ id  |   name   | value  |  status  |    tags     |        created_at        
+-----+----------+--------+----------+-------------+--------------------------
+   1 | item_1   |   10.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+   2 | item_2   |   21.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+   3 | item_3   |   31.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+   4 | item_4   |   42.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+   5 | item_5   |   52.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+   6 | item_6   |   63.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+   7 | item_7   |   73.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+   8 | item_8   |   84.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+   9 | item_9   |   94.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  10 | item_10  |  105.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  11 | item_11  |  115.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  12 | item_12  |  126.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  13 | item_13  |  136.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  14 | item_14  |  147.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  15 | item_15  |  157.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  16 | item_16  |  168.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  17 | item_17  |  178.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  18 | item_18  |  189.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  19 | item_19  |  199.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  20 | item_20  |  210.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  21 | item_21  |  220.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  22 | item_22  |  231.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  23 | item_23  |  241.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  24 | item_24  |  252.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  25 | item_25  |  262.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  26 | item_26  |  273.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  27 | item_27  |  283.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  28 | item_28  |  294.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  29 | item_29  |  304.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  30 | item_30  |  315.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  31 | item_31  |  325.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  32 | item_32  |  336.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  33 | item_33  |  346.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  34 | item_34  |  357.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  35 | item_35  |  367.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  36 | item_36  |  378.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  37 | item_37  |  388.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  38 | item_38  |  399.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  39 | item_39  |  409.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  40 | item_40  |  420.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  41 | item_41  |  430.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  42 | item_42  |  441.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  43 | item_43  |  451.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  44 | item_44  |  462.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  45 | item_45  |  472.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  46 | item_46  |  483.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  47 | item_47  |  493.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  48 | item_48  |  504.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  49 | item_49  |  514.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  50 | item_50  |  525.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  51 | item_51  |  535.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  52 | item_52  |  546.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  53 | item_53  |  556.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  54 | item_54  |  567.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  55 | item_55  |  577.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  56 | item_56  |  588.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  57 | item_57  |  598.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  58 | item_58  |  609.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  59 | item_59  |  619.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  60 | item_60  |  630.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  61 | item_61  |  640.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  62 | item_62  |  651.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  63 | item_63  |  661.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  64 | item_64  |  672.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  65 | item_65  |  682.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  66 | item_66  |  693.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  67 | item_67  |  703.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  68 | item_68  |  714.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  69 | item_69  |  724.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  70 | item_70  |  735.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  71 | item_71  |  745.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  72 | item_72  |  756.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  73 | item_73  |  766.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  74 | item_74  |  777.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  75 | item_75  |  787.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  76 | item_76  |  798.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  77 | item_77  |  808.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  78 | item_78  |  819.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  79 | item_79  |  829.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  80 | item_80  |  840.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  81 | item_81  |  850.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  82 | item_82  |  861.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  83 | item_83  |  871.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  84 | item_84  |  882.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  85 | item_85  |  892.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  86 | item_86  |  903.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  87 | item_87  |  913.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  88 | item_88  |  924.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  89 | item_89  |  934.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  90 | item_90  |  945.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  91 | item_91  |  955.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  92 | item_92  |  966.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  93 | item_93  |  976.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  94 | item_94  |  987.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  95 | item_95  |  997.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  96 | item_96  | 1008.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  97 | item_97  | 1018.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  98 | item_98  | 1029.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  99 | item_99  | 1039.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 100 | item_100 | 1050.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 101 | item_101 | 1060.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 102 | item_102 | 1071.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 103 | item_103 | 1081.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 104 | item_104 | 1092.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 105 | item_105 | 1102.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 106 | item_106 | 1113.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 107 | item_107 | 1123.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 108 | item_108 | 1134.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 109 | item_109 | 1144.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 110 | item_110 | 1155.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 111 | item_111 | 1165.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 112 | item_112 | 1176.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 113 | item_113 | 1186.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 114 | item_114 | 1197.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 115 | item_115 | 1207.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 116 | item_116 | 1218.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 117 | item_117 | 1228.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 118 | item_118 | 1239.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 119 | item_119 | 1249.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 120 | item_120 | 1260.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 121 | item_121 | 1270.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 122 | item_122 | 1281.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 123 | item_123 | 1291.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 124 | item_124 | 1302.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 125 | item_125 | 1312.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 126 | item_126 | 1323.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 127 | item_127 | 1333.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 128 | item_128 | 1344.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 129 | item_129 | 1354.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 130 | item_130 | 1365.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 131 | item_131 | 1375.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 132 | item_132 | 1386.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 133 | item_133 | 1396.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 134 | item_134 | 1407.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 135 | item_135 | 1417.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 136 | item_136 | 1428.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 137 | item_137 | 1438.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 138 | item_138 | 1449.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 139 | item_139 | 1459.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 140 | item_140 | 1470.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 141 | item_141 | 1480.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 142 | item_142 | 1491.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 143 | item_143 | 1501.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 144 | item_144 | 1512.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 145 | item_145 | 1522.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 146 | item_146 | 1533.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 147 | item_147 | 1543.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 148 | item_148 | 1554.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 149 | item_149 | 1564.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 150 | item_150 | 1575.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 151 | item_151 | 1585.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 152 | item_152 | 1596.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 153 | item_153 | 1606.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 154 | item_154 | 1617.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 155 | item_155 | 1627.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 156 | item_156 | 1638.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 157 | item_157 | 1648.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 158 | item_158 | 1659.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 159 | item_159 | 1669.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 160 | item_160 | 1680.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 161 | item_161 | 1690.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 162 | item_162 | 1701.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 163 | item_163 | 1711.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 164 | item_164 | 1722.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 165 | item_165 | 1732.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 166 | item_166 | 1743.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 167 | item_167 | 1753.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 168 | item_168 | 1764.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 169 | item_169 | 1774.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 170 | item_170 | 1785.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 171 | item_171 | 1795.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 172 | item_172 | 1806.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 173 | item_173 | 1816.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 174 | item_174 | 1827.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 175 | item_175 | 1837.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 176 | item_176 | 1848.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 177 | item_177 | 1858.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 178 | item_178 | 1869.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 179 | item_179 | 1879.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 180 | item_180 | 1890.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 181 | item_181 | 1900.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 182 | item_182 | 1911.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 183 | item_183 | 1921.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 184 | item_184 | 1932.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 185 | item_185 | 1942.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 186 | item_186 | 1953.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 187 | item_187 | 1963.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 188 | item_188 | 1974.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 189 | item_189 | 1984.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 190 | item_190 | 1995.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 191 | item_191 | 2005.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 192 | item_192 | 2016.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 193 | item_193 | 2026.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 194 | item_194 | 2037.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 195 | item_195 | 2047.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 196 | item_196 | 2058.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 197 | item_197 | 2068.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 198 | item_198 | 2079.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 199 | item_199 | 2089.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 200 | item_200 | 2100.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 201 | item_201 | 2110.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 202 | item_202 | 2121.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 203 | item_203 | 2131.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 204 | item_204 | 2142.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 205 | item_205 | 2152.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 206 | item_206 | 2163.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 207 | item_207 | 2173.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 208 | item_208 | 2184.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 209 | item_209 | 2194.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 210 | item_210 | 2205.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 211 | item_211 | 2215.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 212 | item_212 | 2226.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 213 | item_213 | 2236.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 214 | item_214 | 2247.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 215 | item_215 | 2257.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 216 | item_216 | 2268.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 217 | item_217 | 2278.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 218 | item_218 | 2289.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 219 | item_219 | 2299.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 220 | item_220 | 2310.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 221 | item_221 | 2320.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 222 | item_222 | 2331.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 223 | item_223 | 2341.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 224 | item_224 | 2352.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 225 | item_225 | 2362.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 226 | item_226 | 2373.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 227 | item_227 | 2383.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 228 | item_228 | 2394.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 229 | item_229 | 2404.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 230 | item_230 | 2415.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 231 | item_231 | 2425.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 232 | item_232 | 2436.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 233 | item_233 | 2446.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 234 | item_234 | 2457.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 235 | item_235 | 2467.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 236 | item_236 | 2478.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 237 | item_237 | 2488.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 238 | item_238 | 2499.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 239 | item_239 | 2509.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 240 | item_240 | 2520.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 241 | item_241 | 2530.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 242 | item_242 | 2541.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 243 | item_243 | 2551.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 244 | item_244 | 2562.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 245 | item_245 | 2572.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 246 | item_246 | 2583.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 247 | item_247 | 2593.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 248 | item_248 | 2604.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 249 | item_249 | 2614.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 250 | item_250 | 2625.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 251 | item_251 | 2635.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 252 | item_252 | 2646.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 253 | item_253 | 2656.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 254 | item_254 | 2667.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 255 | item_255 | 2677.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 256 | item_256 | 2688.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 257 | item_257 | 2698.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 258 | item_258 | 2709.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 259 | item_259 | 2719.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 260 | item_260 | 2730.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 261 | item_261 | 2740.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 262 | item_262 | 2751.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 263 | item_263 | 2761.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 264 | item_264 | 2772.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 265 | item_265 | 2782.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 266 | item_266 | 2793.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 267 | item_267 | 2803.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 268 | item_268 | 2814.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 269 | item_269 | 2824.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 270 | item_270 | 2835.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 271 | item_271 | 2845.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 272 | item_272 | 2856.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 273 | item_273 | 2866.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 274 | item_274 | 2877.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 275 | item_275 | 2887.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 276 | item_276 | 2898.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 277 | item_277 | 2908.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 278 | item_278 | 2919.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 279 | item_279 | 2929.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 280 | item_280 | 2940.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 281 | item_281 | 2950.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 282 | item_282 | 2961.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 283 | item_283 | 2971.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 284 | item_284 | 2982.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 285 | item_285 | 2992.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 286 | item_286 | 3003.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 287 | item_287 | 3013.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 288 | item_288 | 3024.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 289 | item_289 | 3034.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 290 | item_290 | 3045.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 291 | item_291 | 3055.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 292 | item_292 | 3066.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 293 | item_293 | 3076.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 294 | item_294 | 3087.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 295 | item_295 | 3097.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 296 | item_296 | 3108.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 297 | item_297 | 3118.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 298 | item_298 | 3129.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 299 | item_299 | 3139.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 300 | item_300 | 3150.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+(300 rows)
+
+SELECT * FROM norm_test WHERE created_at > '2025-10-31'::timestamp;
+ id  |   name   | value  |  status  |    tags     |        created_at        
+-----+----------+--------+----------+-------------+--------------------------
+   1 | item_1   |   10.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+   2 | item_2   |   21.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+   3 | item_3   |   31.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+   4 | item_4   |   42.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+   5 | item_5   |   52.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+   6 | item_6   |   63.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+   7 | item_7   |   73.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+   8 | item_8   |   84.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+   9 | item_9   |   94.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  10 | item_10  |  105.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  11 | item_11  |  115.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  12 | item_12  |  126.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  13 | item_13  |  136.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  14 | item_14  |  147.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  15 | item_15  |  157.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  16 | item_16  |  168.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  17 | item_17  |  178.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  18 | item_18  |  189.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  19 | item_19  |  199.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  20 | item_20  |  210.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  21 | item_21  |  220.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  22 | item_22  |  231.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  23 | item_23  |  241.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  24 | item_24  |  252.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  25 | item_25  |  262.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  26 | item_26  |  273.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  27 | item_27  |  283.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  28 | item_28  |  294.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  29 | item_29  |  304.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  30 | item_30  |  315.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  31 | item_31  |  325.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  32 | item_32  |  336.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  33 | item_33  |  346.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  34 | item_34  |  357.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  35 | item_35  |  367.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  36 | item_36  |  378.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  37 | item_37  |  388.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  38 | item_38  |  399.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  39 | item_39  |  409.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  40 | item_40  |  420.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  41 | item_41  |  430.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  42 | item_42  |  441.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  43 | item_43  |  451.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  44 | item_44  |  462.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  45 | item_45  |  472.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  46 | item_46  |  483.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  47 | item_47  |  493.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  48 | item_48  |  504.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  49 | item_49  |  514.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  50 | item_50  |  525.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  51 | item_51  |  535.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  52 | item_52  |  546.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  53 | item_53  |  556.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  54 | item_54  |  567.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  55 | item_55  |  577.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  56 | item_56  |  588.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  57 | item_57  |  598.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  58 | item_58  |  609.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  59 | item_59  |  619.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  60 | item_60  |  630.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  61 | item_61  |  640.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  62 | item_62  |  651.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  63 | item_63  |  661.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  64 | item_64  |  672.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  65 | item_65  |  682.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  66 | item_66  |  693.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  67 | item_67  |  703.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  68 | item_68  |  714.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  69 | item_69  |  724.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  70 | item_70  |  735.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  71 | item_71  |  745.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  72 | item_72  |  756.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  73 | item_73  |  766.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  74 | item_74  |  777.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  75 | item_75  |  787.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  76 | item_76  |  798.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  77 | item_77  |  808.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  78 | item_78  |  819.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  79 | item_79  |  829.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  80 | item_80  |  840.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  81 | item_81  |  850.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  82 | item_82  |  861.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  83 | item_83  |  871.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  84 | item_84  |  882.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  85 | item_85  |  892.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  86 | item_86  |  903.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  87 | item_87  |  913.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  88 | item_88  |  924.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  89 | item_89  |  934.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  90 | item_90  |  945.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  91 | item_91  |  955.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  92 | item_92  |  966.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  93 | item_93  |  976.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  94 | item_94  |  987.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  95 | item_95  |  997.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  96 | item_96  | 1008.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  97 | item_97  | 1018.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  98 | item_98  | 1029.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  99 | item_99  | 1039.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 100 | item_100 | 1050.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 101 | item_101 | 1060.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 102 | item_102 | 1071.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 103 | item_103 | 1081.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 104 | item_104 | 1092.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 105 | item_105 | 1102.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 106 | item_106 | 1113.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 107 | item_107 | 1123.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 108 | item_108 | 1134.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 109 | item_109 | 1144.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 110 | item_110 | 1155.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 111 | item_111 | 1165.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 112 | item_112 | 1176.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 113 | item_113 | 1186.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 114 | item_114 | 1197.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 115 | item_115 | 1207.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 116 | item_116 | 1218.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 117 | item_117 | 1228.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 118 | item_118 | 1239.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 119 | item_119 | 1249.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 120 | item_120 | 1260.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 121 | item_121 | 1270.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 122 | item_122 | 1281.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 123 | item_123 | 1291.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 124 | item_124 | 1302.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 125 | item_125 | 1312.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 126 | item_126 | 1323.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 127 | item_127 | 1333.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 128 | item_128 | 1344.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 129 | item_129 | 1354.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 130 | item_130 | 1365.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 131 | item_131 | 1375.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 132 | item_132 | 1386.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 133 | item_133 | 1396.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 134 | item_134 | 1407.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 135 | item_135 | 1417.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 136 | item_136 | 1428.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 137 | item_137 | 1438.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 138 | item_138 | 1449.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 139 | item_139 | 1459.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 140 | item_140 | 1470.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 141 | item_141 | 1480.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 142 | item_142 | 1491.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 143 | item_143 | 1501.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 144 | item_144 | 1512.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 145 | item_145 | 1522.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 146 | item_146 | 1533.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 147 | item_147 | 1543.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 148 | item_148 | 1554.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 149 | item_149 | 1564.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 150 | item_150 | 1575.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 151 | item_151 | 1585.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 152 | item_152 | 1596.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 153 | item_153 | 1606.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 154 | item_154 | 1617.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 155 | item_155 | 1627.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 156 | item_156 | 1638.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 157 | item_157 | 1648.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 158 | item_158 | 1659.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 159 | item_159 | 1669.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 160 | item_160 | 1680.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 161 | item_161 | 1690.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 162 | item_162 | 1701.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 163 | item_163 | 1711.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 164 | item_164 | 1722.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 165 | item_165 | 1732.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 166 | item_166 | 1743.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 167 | item_167 | 1753.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 168 | item_168 | 1764.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 169 | item_169 | 1774.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 170 | item_170 | 1785.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 171 | item_171 | 1795.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 172 | item_172 | 1806.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 173 | item_173 | 1816.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 174 | item_174 | 1827.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 175 | item_175 | 1837.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 176 | item_176 | 1848.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 177 | item_177 | 1858.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 178 | item_178 | 1869.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 179 | item_179 | 1879.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 180 | item_180 | 1890.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 181 | item_181 | 1900.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 182 | item_182 | 1911.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 183 | item_183 | 1921.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 184 | item_184 | 1932.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 185 | item_185 | 1942.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 186 | item_186 | 1953.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 187 | item_187 | 1963.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 188 | item_188 | 1974.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 189 | item_189 | 1984.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 190 | item_190 | 1995.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 191 | item_191 | 2005.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 192 | item_192 | 2016.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 193 | item_193 | 2026.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 194 | item_194 | 2037.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 195 | item_195 | 2047.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 196 | item_196 | 2058.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 197 | item_197 | 2068.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 198 | item_198 | 2079.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 199 | item_199 | 2089.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 200 | item_200 | 2100.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 201 | item_201 | 2110.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 202 | item_202 | 2121.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 203 | item_203 | 2131.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 204 | item_204 | 2142.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 205 | item_205 | 2152.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 206 | item_206 | 2163.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 207 | item_207 | 2173.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 208 | item_208 | 2184.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 209 | item_209 | 2194.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 210 | item_210 | 2205.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 211 | item_211 | 2215.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 212 | item_212 | 2226.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 213 | item_213 | 2236.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 214 | item_214 | 2247.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 215 | item_215 | 2257.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 216 | item_216 | 2268.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 217 | item_217 | 2278.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 218 | item_218 | 2289.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 219 | item_219 | 2299.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 220 | item_220 | 2310.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 221 | item_221 | 2320.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 222 | item_222 | 2331.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 223 | item_223 | 2341.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 224 | item_224 | 2352.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 225 | item_225 | 2362.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 226 | item_226 | 2373.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 227 | item_227 | 2383.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 228 | item_228 | 2394.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 229 | item_229 | 2404.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 230 | item_230 | 2415.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 231 | item_231 | 2425.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 232 | item_232 | 2436.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 233 | item_233 | 2446.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 234 | item_234 | 2457.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 235 | item_235 | 2467.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 236 | item_236 | 2478.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 237 | item_237 | 2488.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 238 | item_238 | 2499.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 239 | item_239 | 2509.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 240 | item_240 | 2520.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 241 | item_241 | 2530.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 242 | item_242 | 2541.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 243 | item_243 | 2551.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 244 | item_244 | 2562.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 245 | item_245 | 2572.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 246 | item_246 | 2583.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 247 | item_247 | 2593.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 248 | item_248 | 2604.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 249 | item_249 | 2614.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 250 | item_250 | 2625.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 251 | item_251 | 2635.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 252 | item_252 | 2646.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 253 | item_253 | 2656.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 254 | item_254 | 2667.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 255 | item_255 | 2677.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 256 | item_256 | 2688.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 257 | item_257 | 2698.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 258 | item_258 | 2709.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 259 | item_259 | 2719.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 260 | item_260 | 2730.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 261 | item_261 | 2740.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 262 | item_262 | 2751.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 263 | item_263 | 2761.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 264 | item_264 | 2772.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 265 | item_265 | 2782.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 266 | item_266 | 2793.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 267 | item_267 | 2803.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 268 | item_268 | 2814.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 269 | item_269 | 2824.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 270 | item_270 | 2835.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 271 | item_271 | 2845.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 272 | item_272 | 2856.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 273 | item_273 | 2866.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 274 | item_274 | 2877.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 275 | item_275 | 2887.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 276 | item_276 | 2898.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 277 | item_277 | 2908.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 278 | item_278 | 2919.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 279 | item_279 | 2929.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 280 | item_280 | 2940.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 281 | item_281 | 2950.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 282 | item_282 | 2961.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 283 | item_283 | 2971.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 284 | item_284 | 2982.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 285 | item_285 | 2992.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 286 | item_286 | 3003.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 287 | item_287 | 3013.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 288 | item_288 | 3024.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 289 | item_289 | 3034.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 290 | item_290 | 3045.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 291 | item_291 | 3055.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 292 | item_292 | 3066.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 293 | item_293 | 3076.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 294 | item_294 | 3087.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 295 | item_295 | 3097.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 296 | item_296 | 3108.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 297 | item_297 | 3118.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 298 | item_298 | 3129.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 299 | item_299 | 3139.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 300 | item_300 | 3150.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+(300 rows)
+
+SELECT * FROM norm_test WHERE created_at BETWEEN '2025-10-30'::timestamp AND '2025-11-01'::timestamp;
+ id  |   name   | value  |  status  |    tags     |        created_at        
+-----+----------+--------+----------+-------------+--------------------------
+   1 | item_1   |   10.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+   2 | item_2   |   21.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+   3 | item_3   |   31.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+   4 | item_4   |   42.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+   5 | item_5   |   52.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+   6 | item_6   |   63.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+   7 | item_7   |   73.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+   8 | item_8   |   84.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+   9 | item_9   |   94.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  10 | item_10  |  105.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  11 | item_11  |  115.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  12 | item_12  |  126.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  13 | item_13  |  136.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  14 | item_14  |  147.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  15 | item_15  |  157.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  16 | item_16  |  168.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  17 | item_17  |  178.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  18 | item_18  |  189.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  19 | item_19  |  199.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  20 | item_20  |  210.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  21 | item_21  |  220.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  22 | item_22  |  231.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  23 | item_23  |  241.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  24 | item_24  |  252.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  25 | item_25  |  262.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  26 | item_26  |  273.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  27 | item_27  |  283.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  28 | item_28  |  294.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  29 | item_29  |  304.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  30 | item_30  |  315.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  31 | item_31  |  325.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  32 | item_32  |  336.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  33 | item_33  |  346.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  34 | item_34  |  357.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  35 | item_35  |  367.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  36 | item_36  |  378.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  37 | item_37  |  388.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  38 | item_38  |  399.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  39 | item_39  |  409.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  40 | item_40  |  420.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  41 | item_41  |  430.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  42 | item_42  |  441.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  43 | item_43  |  451.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  44 | item_44  |  462.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  45 | item_45  |  472.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  46 | item_46  |  483.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  47 | item_47  |  493.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  48 | item_48  |  504.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  49 | item_49  |  514.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  50 | item_50  |  525.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  51 | item_51  |  535.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  52 | item_52  |  546.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  53 | item_53  |  556.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  54 | item_54  |  567.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  55 | item_55  |  577.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  56 | item_56  |  588.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  57 | item_57  |  598.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  58 | item_58  |  609.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  59 | item_59  |  619.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  60 | item_60  |  630.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  61 | item_61  |  640.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  62 | item_62  |  651.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  63 | item_63  |  661.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  64 | item_64  |  672.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  65 | item_65  |  682.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  66 | item_66  |  693.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  67 | item_67  |  703.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  68 | item_68  |  714.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  69 | item_69  |  724.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  70 | item_70  |  735.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  71 | item_71  |  745.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  72 | item_72  |  756.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  73 | item_73  |  766.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  74 | item_74  |  777.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  75 | item_75  |  787.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  76 | item_76  |  798.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  77 | item_77  |  808.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  78 | item_78  |  819.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  79 | item_79  |  829.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  80 | item_80  |  840.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  81 | item_81  |  850.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  82 | item_82  |  861.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  83 | item_83  |  871.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  84 | item_84  |  882.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  85 | item_85  |  892.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  86 | item_86  |  903.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  87 | item_87  |  913.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  88 | item_88  |  924.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  89 | item_89  |  934.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+  90 | item_90  |  945.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+  91 | item_91  |  955.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+  92 | item_92  |  966.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+  93 | item_93  |  976.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+  94 | item_94  |  987.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+  95 | item_95  |  997.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+  96 | item_96  | 1008.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+  97 | item_97  | 1018.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+  98 | item_98  | 1029.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+  99 | item_99  | 1039.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 100 | item_100 | 1050.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 101 | item_101 | 1060.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 102 | item_102 | 1071.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 103 | item_103 | 1081.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 104 | item_104 | 1092.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 105 | item_105 | 1102.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 106 | item_106 | 1113.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 107 | item_107 | 1123.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 108 | item_108 | 1134.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 109 | item_109 | 1144.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 110 | item_110 | 1155.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 111 | item_111 | 1165.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 112 | item_112 | 1176.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 113 | item_113 | 1186.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 114 | item_114 | 1197.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 115 | item_115 | 1207.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 116 | item_116 | 1218.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 117 | item_117 | 1228.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 118 | item_118 | 1239.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 119 | item_119 | 1249.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 120 | item_120 | 1260.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 121 | item_121 | 1270.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 122 | item_122 | 1281.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 123 | item_123 | 1291.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 124 | item_124 | 1302.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 125 | item_125 | 1312.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 126 | item_126 | 1323.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 127 | item_127 | 1333.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 128 | item_128 | 1344.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 129 | item_129 | 1354.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 130 | item_130 | 1365.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 131 | item_131 | 1375.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 132 | item_132 | 1386.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 133 | item_133 | 1396.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 134 | item_134 | 1407.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 135 | item_135 | 1417.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 136 | item_136 | 1428.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 137 | item_137 | 1438.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 138 | item_138 | 1449.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 139 | item_139 | 1459.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 140 | item_140 | 1470.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 141 | item_141 | 1480.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 142 | item_142 | 1491.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 143 | item_143 | 1501.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 144 | item_144 | 1512.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 145 | item_145 | 1522.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 146 | item_146 | 1533.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 147 | item_147 | 1543.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 148 | item_148 | 1554.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 149 | item_149 | 1564.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 150 | item_150 | 1575.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 151 | item_151 | 1585.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 152 | item_152 | 1596.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 153 | item_153 | 1606.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 154 | item_154 | 1617.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 155 | item_155 | 1627.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 156 | item_156 | 1638.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 157 | item_157 | 1648.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 158 | item_158 | 1659.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 159 | item_159 | 1669.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 160 | item_160 | 1680.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 161 | item_161 | 1690.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 162 | item_162 | 1701.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 163 | item_163 | 1711.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 164 | item_164 | 1722.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 165 | item_165 | 1732.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 166 | item_166 | 1743.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 167 | item_167 | 1753.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 168 | item_168 | 1764.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 169 | item_169 | 1774.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 170 | item_170 | 1785.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 171 | item_171 | 1795.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 172 | item_172 | 1806.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 173 | item_173 | 1816.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 174 | item_174 | 1827.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 175 | item_175 | 1837.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 176 | item_176 | 1848.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 177 | item_177 | 1858.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 178 | item_178 | 1869.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 179 | item_179 | 1879.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 180 | item_180 | 1890.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 181 | item_181 | 1900.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 182 | item_182 | 1911.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 183 | item_183 | 1921.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 184 | item_184 | 1932.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 185 | item_185 | 1942.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 186 | item_186 | 1953.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 187 | item_187 | 1963.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 188 | item_188 | 1974.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 189 | item_189 | 1984.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 190 | item_190 | 1995.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 191 | item_191 | 2005.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 192 | item_192 | 2016.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 193 | item_193 | 2026.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 194 | item_194 | 2037.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 195 | item_195 | 2047.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 196 | item_196 | 2058.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 197 | item_197 | 2068.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 198 | item_198 | 2079.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 199 | item_199 | 2089.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 200 | item_200 | 2100.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 201 | item_201 | 2110.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 202 | item_202 | 2121.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 203 | item_203 | 2131.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 204 | item_204 | 2142.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 205 | item_205 | 2152.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 206 | item_206 | 2163.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 207 | item_207 | 2173.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 208 | item_208 | 2184.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 209 | item_209 | 2194.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 210 | item_210 | 2205.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 211 | item_211 | 2215.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 212 | item_212 | 2226.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 213 | item_213 | 2236.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 214 | item_214 | 2247.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 215 | item_215 | 2257.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 216 | item_216 | 2268.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 217 | item_217 | 2278.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 218 | item_218 | 2289.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 219 | item_219 | 2299.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 220 | item_220 | 2310.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 221 | item_221 | 2320.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 222 | item_222 | 2331.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 223 | item_223 | 2341.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 224 | item_224 | 2352.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 225 | item_225 | 2362.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 226 | item_226 | 2373.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 227 | item_227 | 2383.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 228 | item_228 | 2394.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 229 | item_229 | 2404.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 230 | item_230 | 2415.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 231 | item_231 | 2425.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 232 | item_232 | 2436.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 233 | item_233 | 2446.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 234 | item_234 | 2457.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 235 | item_235 | 2467.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 236 | item_236 | 2478.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 237 | item_237 | 2488.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 238 | item_238 | 2499.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 239 | item_239 | 2509.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 240 | item_240 | 2520.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 241 | item_241 | 2530.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 242 | item_242 | 2541.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 243 | item_243 | 2551.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 244 | item_244 | 2562.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 245 | item_245 | 2572.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 246 | item_246 | 2583.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 247 | item_247 | 2593.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 248 | item_248 | 2604.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 249 | item_249 | 2614.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 250 | item_250 | 2625.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 251 | item_251 | 2635.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 252 | item_252 | 2646.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 253 | item_253 | 2656.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 254 | item_254 | 2667.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 255 | item_255 | 2677.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 256 | item_256 | 2688.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 257 | item_257 | 2698.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 258 | item_258 | 2709.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 259 | item_259 | 2719.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 260 | item_260 | 2730.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 261 | item_261 | 2740.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 262 | item_262 | 2751.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 263 | item_263 | 2761.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 264 | item_264 | 2772.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 265 | item_265 | 2782.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 266 | item_266 | 2793.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 267 | item_267 | 2803.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 268 | item_268 | 2814.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 269 | item_269 | 2824.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 270 | item_270 | 2835.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 271 | item_271 | 2845.5 | inactive | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 272 | item_272 | 2856.0 | pending  | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 273 | item_273 | 2866.5 | active   | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 274 | item_274 | 2877.0 | inactive | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 275 | item_275 | 2887.5 | pending  | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 276 | item_276 | 2898.0 | active   | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 277 | item_277 | 2908.5 | inactive | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 278 | item_278 | 2919.0 | pending  | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 279 | item_279 | 2929.5 | active   | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 280 | item_280 | 2940.0 | inactive | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 281 | item_281 | 2950.5 | pending  | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 282 | item_282 | 2961.0 | active   | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 283 | item_283 | 2971.5 | inactive | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 284 | item_284 | 2982.0 | pending  | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 285 | item_285 | 2992.5 | active   | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 286 | item_286 | 3003.0 | inactive | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 287 | item_287 | 3013.5 | pending  | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 288 | item_288 | 3024.0 | active   | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 289 | item_289 | 3034.5 | inactive | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 290 | item_290 | 3045.0 | pending  | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+ 291 | item_291 | 3055.5 | active   | {tag1,cat1} | Fri Oct 31 12:00:00 2025
+ 292 | item_292 | 3066.0 | inactive | {tag2,cat2} | Fri Oct 31 12:00:00 2025
+ 293 | item_293 | 3076.5 | pending  | {tag3,cat3} | Fri Oct 31 12:00:00 2025
+ 294 | item_294 | 3087.0 | active   | {tag4,cat4} | Fri Oct 31 12:00:00 2025
+ 295 | item_295 | 3097.5 | inactive | {tag5,cat0} | Fri Oct 31 12:00:00 2025
+ 296 | item_296 | 3108.0 | pending  | {tag6,cat1} | Fri Oct 31 12:00:00 2025
+ 297 | item_297 | 3118.5 | active   | {tag7,cat2} | Fri Oct 31 12:00:00 2025
+ 298 | item_298 | 3129.0 | inactive | {tag8,cat3} | Fri Oct 31 12:00:00 2025
+ 299 | item_299 | 3139.5 | pending  | {tag9,cat4} | Fri Oct 31 12:00:00 2025
+ 300 | item_300 | 3150.0 | active   | {tag0,cat0} | Fri Oct 31 12:00:00 2025
+(300 rows)
+
+-- Test queries with aggregate functions (should normalize)
+SELECT COUNT(*) FROM norm_test WHERE status = 'active';
+ count 
+-------
+   100
+(1 row)
+
+SELECT COUNT(*) FROM norm_test WHERE status = 'inactive';
+ count 
+-------
+   100
+(1 row)
+
+SELECT COUNT(*) FROM norm_test WHERE status = 'pending';
+ count 
+-------
+   100
+(1 row)
+
+-- Test queries with GROUP BY
+SELECT status, COUNT(*) FROM norm_test GROUP BY status;
+  status  | count 
+----------+-------
+ active   |   100
+ pending  |   100
+ inactive |   100
+(3 rows)
+
+SELECT status, AVG(value) FROM norm_test GROUP BY status;
+  status  |          avg          
+----------+-----------------------
+ active   | 1590.7500000000000000
+ pending  | 1580.2500000000000000
+ inactive | 1569.7500000000000000
+(3 rows)
+
+SELECT status, SUM(value) FROM norm_test GROUP BY status;
+  status  |   sum    
+----------+----------
+ active   | 159075.0
+ pending  | 158025.0
+ inactive | 156975.0
+(3 rows)
+
+-- Test queries with HAVING
+SELECT status, COUNT(*) FROM norm_test GROUP BY status HAVING COUNT(*) > 50;
+  status  | count 
+----------+-------
+ active   |   100
+ pending  |   100
+ inactive |   100
+(3 rows)
+
+SELECT status, AVG(value) FROM norm_test GROUP BY status HAVING AVG(value) > 100;
+  status  |          avg          
+----------+-----------------------
+ active   | 1590.7500000000000000
+ pending  | 1580.2500000000000000
+ inactive | 1569.7500000000000000
+(3 rows)
+
+-- Wait for stats
+SELECT pg_sleep(0.2);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+-- Verify normalization: queries with same structure but different literals should share queryid
+SELECT 
+  COUNT(*) AS total_queries,
+  COUNT(DISTINCT queryid) AS unique_queryids,
+  COUNT(*) - COUNT(DISTINCT queryid) AS normalized_queries
+FROM pg_stat_insights
+WHERE query LIKE '%norm_test%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 5: FROM pg_stat_insights
+             ^
+-- Verify that queries with different literal values are normalized
+SELECT 
+  query LIKE '%WHERE id =%' AS is_normalized_id_query,
+  COUNT(*) AS query_count,
+  COUNT(DISTINCT queryid) AS unique_ids
+FROM pg_stat_insights
+WHERE query LIKE '%WHERE id =%' AND query LIKE '%norm_test%'
+GROUP BY query LIKE '%WHERE id =%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 5: FROM pg_stat_insights
+             ^
+-- Verify LIKE queries are normalized separately (pattern differs)
+SELECT 
+  query LIKE '%LIKE%' AS has_like,
+  COUNT(*) AS like_query_count,
+  COUNT(DISTINCT queryid) AS unique_like_ids
+FROM pg_stat_insights
+WHERE query LIKE '%LIKE%' AND query LIKE '%norm_test%'
+GROUP BY query LIKE '%LIKE%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 5: FROM pg_stat_insights
+             ^

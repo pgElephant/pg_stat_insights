@@ -1,0 +1,88 @@
+-- ============================================================================
+-- Test 12: Permissions and Security
+-- Tests that permissions are correctly set on all objects
+-- ============================================================================
+-- Check that PUBLIC has SELECT on main view
+SELECT has_table_privilege('public', 'pg_stat_insights', 'SELECT') AS public_can_select_main;
+ public_can_select_main 
+------------------------
+ t
+(1 row)
+
+-- Check permissions on all views
+SELECT has_table_privilege('public', 'pg_stat_insights_replication', 'SELECT') AS can_select_repl;
+ can_select_repl 
+-----------------
+ t
+(1 row)
+
+SELECT has_table_privilege('public', 'pg_stat_insights_top_by_time', 'SELECT') AS can_select_top_time;
+ can_select_top_time 
+---------------------
+ t
+(1 row)
+
+SELECT has_table_privilege('public', 'pg_stat_insights_top_by_calls', 'SELECT') AS can_select_top_calls;
+ can_select_top_calls 
+----------------------
+ t
+(1 row)
+
+SELECT has_table_privilege('public', 'pg_stat_insights_top_by_io', 'SELECT') AS can_select_top_io;
+ can_select_top_io 
+-------------------
+ t
+(1 row)
+
+SELECT has_table_privilege('public', 'pg_stat_insights_top_cache_misses', 'SELECT') AS can_select_cache;
+ can_select_cache 
+------------------
+ t
+(1 row)
+
+SELECT has_table_privilege('public', 'pg_stat_insights_slow_queries', 'SELECT') AS can_select_slow;
+ can_select_slow 
+-----------------
+ t
+(1 row)
+
+SELECT has_table_privilege('public', 'pg_stat_insights_histogram_summary', 'SELECT') AS can_select_histogram;
+ can_select_histogram 
+----------------------
+ t
+(1 row)
+
+SELECT has_table_privilege('public', 'pg_stat_insights_by_bucket', 'SELECT') AS can_select_bucket;
+ can_select_bucket 
+-------------------
+ t
+(1 row)
+
+-- Verify functions are executable by public
+SELECT has_function_privilege('public', 'pg_stat_insights_reset()', 'EXECUTE') AS can_execute_reset;
+ can_execute_reset 
+-------------------
+ t
+(1 row)
+
+-- Test that non-superuser cannot see other users' queries (query text filtering)
+-- This depends on PostgreSQL permissions, just verify the view is accessible
+SELECT COUNT(*) >= 0 AS view_accessible_by_public FROM pg_stat_insights;
+ view_accessible_by_public 
+---------------------------
+ t
+(1 row)
+
+-- Test error views are accessible
+SELECT has_table_privilege('public', 'pg_stat_insights_errors', 'SELECT') AS can_select_errors;
+ can_select_errors 
+-------------------
+ t
+(1 row)
+
+SELECT has_table_privilege('public', 'pg_stat_insights_plan_errors', 'SELECT') AS can_select_plan_errors;
+ can_select_plan_errors 
+------------------------
+ t
+(1 row)
+

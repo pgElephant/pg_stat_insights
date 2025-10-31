@@ -21,10 +21,14 @@ PGFILEDESC = "pg_stat_insights - enhanced execution statistics of SQL statements
 
 LDFLAGS_SL += $(filter -lm, $(LIBS))
 
-REGRESS_OPTS = --temp-config $(top_srcdir)/contrib/pg_stat_insights/pg_stat_insights.conf
-REGRESS = select dml cursors utility level_tracking planning \
-	user_activity wal entry_timestamp privileges extended \
-	parallel cleanup oldextversions squashing
+REGRESS_OPTS = --temp-config pg_stat_insights.conf
+REGRESS = 01_extension_basics 02_basic_queries 03_views_and_aggregates \
+	04_statistics_accuracy 05_io_and_cache 06_wal_tracking \
+	07_reset_functionality 08_parallel_queries 09_jit_tracking \
+	10_edge_cases 11_comprehensive_metrics 12_permissions 13_cleanup \
+	14_prepared_statements 15_complex_joins 16_json_operations \
+	17_array_operations 18_partitioning 19_triggers_functions \
+	20_window_functions 21_transaction_handling 22_query_normalization
 
 TAP_TESTS = 1
 

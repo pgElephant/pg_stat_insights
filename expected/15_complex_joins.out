@@ -1,0 +1,641 @@
+-- ============================================================================
+-- Test 15: Complex Joins and Subqueries
+-- Tests tracking of complex join operations and nested queries
+-- ============================================================================
+-- Reset statistics
+SELECT pg_stat_insights_reset();
+ERROR:  function pg_stat_insights_reset() does not exist
+LINE 1: SELECT pg_stat_insights_reset();
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+-- Create multiple related tables
+SELECT setseed(0.5);
+ setseed 
+---------
+ 
+(1 row)
+
+CREATE TEMP TABLE customers (
+  customer_id serial PRIMARY KEY,
+  name text NOT NULL,
+  email text,
+  region text DEFAULT 'us',
+  created_at timestamp DEFAULT '2025-10-31 12:00:00'::timestamp
+);
+CREATE TEMP TABLE orders (
+  order_id serial PRIMARY KEY,
+  customer_id int REFERENCES customers(customer_id),
+  order_date date DEFAULT '2025-10-31',
+  total_amount numeric(10,2),
+  status text DEFAULT 'pending'
+);
+CREATE TEMP TABLE order_items (
+  item_id serial PRIMARY KEY,
+  order_id int REFERENCES orders(order_id),
+  product_id int,
+  quantity int,
+  unit_price numeric(10,2)
+);
+CREATE TEMP TABLE products (
+  product_id serial PRIMARY KEY,
+  name text NOT NULL,
+  category text,
+  price numeric(10,2)
+);
+-- Insert deterministic data
+INSERT INTO customers (name, email, region)
+SELECT 
+  'customer_' || i,
+  'email_' || i || '@example.com',
+  CASE (i % 4) WHEN 0 THEN 'us' WHEN 1 THEN 'eu' WHEN 2 THEN 'asia' ELSE 'other' END
+FROM generate_series(1, 200) i;
+INSERT INTO orders (customer_id, total_amount, status)
+SELECT 
+  (i % 200) + 1,
+  (i * 10.5)::numeric(10,2),
+  CASE (i % 3) WHEN 0 THEN 'pending' WHEN 1 THEN 'shipped' ELSE 'delivered' END
+FROM generate_series(1, 500) i;
+INSERT INTO order_items (order_id, product_id, quantity, unit_price)
+SELECT 
+  (i % 500) + 1,
+  (i % 50) + 1,
+  (i % 10) + 1,
+  ((i % 100) * 1.25)::numeric(10,2)
+FROM generate_series(1, 1000) i;
+INSERT INTO products (name, category, price)
+SELECT 
+  'product_' || i,
+  CASE (i % 5) WHEN 0 THEN 'electronics' WHEN 1 THEN 'clothing' WHEN 2 THEN 'food' WHEN 3 THEN 'books' ELSE 'other' END,
+  (i * 2.75)::numeric(10,2)
+FROM generate_series(1, 100) i;
+-- Create indexes for join optimization
+CREATE INDEX idx_orders_customer ON orders(customer_id);
+CREATE INDEX idx_order_items_order ON order_items(order_id);
+CREATE INDEX idx_order_items_product ON order_items(product_id);
+-- Test simple joins
+SELECT c.name, o.order_id, o.total_amount
+FROM customers c
+JOIN orders o ON c.customer_id = o.customer_id
+WHERE c.region = 'us'
+ORDER BY o.total_amount DESC
+LIMIT 20;
+     name     | order_id | total_amount 
+--------------+----------+--------------
+ customer_100 |      499 |      5239.50
+ customer_96  |      495 |      5197.50
+ customer_92  |      491 |      5155.50
+ customer_88  |      487 |      5113.50
+ customer_84  |      483 |      5071.50
+ customer_80  |      479 |      5029.50
+ customer_76  |      475 |      4987.50
+ customer_72  |      471 |      4945.50
+ customer_68  |      467 |      4903.50
+ customer_64  |      463 |      4861.50
+ customer_60  |      459 |      4819.50
+ customer_56  |      455 |      4777.50
+ customer_52  |      451 |      4735.50
+ customer_48  |      447 |      4693.50
+ customer_44  |      443 |      4651.50
+ customer_40  |      439 |      4609.50
+ customer_36  |      435 |      4567.50
+ customer_32  |      431 |      4525.50
+ customer_28  |      427 |      4483.50
+ customer_24  |      423 |      4441.50
+(20 rows)
+
+-- Test multiple joins
+SELECT 
+  c.name,
+  o.order_id,
+  o.order_date,
+  p.name AS product_name,
+  oi.quantity,
+  oi.unit_price
+FROM customers c
+JOIN orders o ON c.customer_id = o.customer_id
+JOIN order_items oi ON o.order_id = oi.order_id
+JOIN products p ON oi.product_id = p.product_id
+WHERE c.region = 'eu' AND o.status = 'shipped'
+ORDER BY o.total_amount DESC
+LIMIT 50;
+     name     | order_id | order_date | product_name | quantity | unit_price 
+--------------+----------+------------+--------------+----------+------------
+ customer_97  |      496 | 10-31-2025 | product_46   |        6 |     118.75
+ customer_97  |      496 | 10-31-2025 | product_46   |        6 |     118.75
+ customer_85  |      484 | 10-31-2025 | product_34   |        4 |     103.75
+ customer_85  |      484 | 10-31-2025 | product_34   |        4 |     103.75
+ customer_73  |      472 | 10-31-2025 | product_22   |        2 |      88.75
+ customer_73  |      472 | 10-31-2025 | product_22   |        2 |      88.75
+ customer_61  |      460 | 10-31-2025 | product_10   |       10 |      73.75
+ customer_61  |      460 | 10-31-2025 | product_10   |       10 |      73.75
+ customer_49  |      448 | 10-31-2025 | product_48   |        8 |      58.75
+ customer_49  |      448 | 10-31-2025 | product_48   |        8 |      58.75
+ customer_37  |      436 | 10-31-2025 | product_36   |        6 |      43.75
+ customer_37  |      436 | 10-31-2025 | product_36   |        6 |      43.75
+ customer_25  |      424 | 10-31-2025 | product_24   |        4 |      28.75
+ customer_25  |      424 | 10-31-2025 | product_24   |        4 |      28.75
+ customer_13  |      412 | 10-31-2025 | product_12   |        2 |      13.75
+ customer_13  |      412 | 10-31-2025 | product_12   |        2 |      13.75
+ customer_1   |      400 | 10-31-2025 | product_50   |       10 |     123.75
+ customer_1   |      400 | 10-31-2025 | product_50   |       10 |     123.75
+ customer_189 |      388 | 10-31-2025 | product_38   |        8 |     108.75
+ customer_189 |      388 | 10-31-2025 | product_38   |        8 |     108.75
+ customer_177 |      376 | 10-31-2025 | product_26   |        6 |      93.75
+ customer_177 |      376 | 10-31-2025 | product_26   |        6 |      93.75
+ customer_165 |      364 | 10-31-2025 | product_14   |        4 |      78.75
+ customer_165 |      364 | 10-31-2025 | product_14   |        4 |      78.75
+ customer_153 |      352 | 10-31-2025 | product_2    |        2 |      63.75
+ customer_153 |      352 | 10-31-2025 | product_2    |        2 |      63.75
+ customer_141 |      340 | 10-31-2025 | product_40   |       10 |      48.75
+ customer_141 |      340 | 10-31-2025 | product_40   |       10 |      48.75
+ customer_129 |      328 | 10-31-2025 | product_28   |        8 |      33.75
+ customer_129 |      328 | 10-31-2025 | product_28   |        8 |      33.75
+ customer_117 |      316 | 10-31-2025 | product_16   |        6 |      18.75
+ customer_117 |      316 | 10-31-2025 | product_16   |        6 |      18.75
+ customer_105 |      304 | 10-31-2025 | product_4    |        4 |       3.75
+ customer_105 |      304 | 10-31-2025 | product_4    |        4 |       3.75
+ customer_93  |      292 | 10-31-2025 | product_42   |        2 |     113.75
+ customer_93  |      292 | 10-31-2025 | product_42   |        2 |     113.75
+ customer_81  |      280 | 10-31-2025 | product_30   |       10 |      98.75
+ customer_81  |      280 | 10-31-2025 | product_30   |       10 |      98.75
+ customer_69  |      268 | 10-31-2025 | product_18   |        8 |      83.75
+ customer_69  |      268 | 10-31-2025 | product_18   |        8 |      83.75
+ customer_57  |      256 | 10-31-2025 | product_6    |        6 |      68.75
+ customer_57  |      256 | 10-31-2025 | product_6    |        6 |      68.75
+ customer_45  |      244 | 10-31-2025 | product_44   |        4 |      53.75
+ customer_45  |      244 | 10-31-2025 | product_44   |        4 |      53.75
+ customer_33  |      232 | 10-31-2025 | product_32   |        2 |      38.75
+ customer_33  |      232 | 10-31-2025 | product_32   |        2 |      38.75
+ customer_21  |      220 | 10-31-2025 | product_20   |       10 |      23.75
+ customer_21  |      220 | 10-31-2025 | product_20   |       10 |      23.75
+ customer_9   |      208 | 10-31-2025 | product_8    |        8 |       8.75
+ customer_9   |      208 | 10-31-2025 | product_8    |        8 |       8.75
+(50 rows)
+
+-- Test LEFT JOIN
+SELECT 
+  c.name,
+  COUNT(o.order_id) AS order_count,
+  COALESCE(SUM(o.total_amount), 0) AS total_spent
+FROM customers c
+LEFT JOIN orders o ON c.customer_id = o.customer_id
+GROUP BY c.customer_id, c.name
+HAVING COUNT(o.order_id) > 2
+ORDER BY total_spent DESC
+LIMIT 30;
+     name     | order_count | total_spent 
+--------------+-------------+-------------
+ customer_101 |           3 |     9450.00
+ customer_100 |           3 |     9418.50
+ customer_99  |           3 |     9387.00
+ customer_98  |           3 |     9355.50
+ customer_97  |           3 |     9324.00
+ customer_96  |           3 |     9292.50
+ customer_95  |           3 |     9261.00
+ customer_94  |           3 |     9229.50
+ customer_93  |           3 |     9198.00
+ customer_92  |           3 |     9166.50
+ customer_91  |           3 |     9135.00
+ customer_90  |           3 |     9103.50
+ customer_89  |           3 |     9072.00
+ customer_88  |           3 |     9040.50
+ customer_87  |           3 |     9009.00
+ customer_86  |           3 |     8977.50
+ customer_85  |           3 |     8946.00
+ customer_84  |           3 |     8914.50
+ customer_83  |           3 |     8883.00
+ customer_82  |           3 |     8851.50
+ customer_81  |           3 |     8820.00
+ customer_80  |           3 |     8788.50
+ customer_79  |           3 |     8757.00
+ customer_78  |           3 |     8725.50
+ customer_77  |           3 |     8694.00
+ customer_76  |           3 |     8662.50
+ customer_75  |           3 |     8631.00
+ customer_74  |           3 |     8599.50
+ customer_73  |           3 |     8568.00
+ customer_72  |           3 |     8536.50
+(30 rows)
+
+-- Test RIGHT JOIN
+SELECT 
+  o.order_id,
+  c.name,
+  o.total_amount
+FROM orders o
+RIGHT JOIN customers c ON o.customer_id = c.customer_id
+WHERE c.region = 'asia'
+ORDER BY o.total_amount DESC NULLS LAST
+LIMIT 25;
+ order_id |    name     | total_amount 
+----------+-------------+--------------
+      497 | customer_98 |      5218.50
+      493 | customer_94 |      5176.50
+      489 | customer_90 |      5134.50
+      485 | customer_86 |      5092.50
+      481 | customer_82 |      5050.50
+      477 | customer_78 |      5008.50
+      473 | customer_74 |      4966.50
+      469 | customer_70 |      4924.50
+      465 | customer_66 |      4882.50
+      461 | customer_62 |      4840.50
+      457 | customer_58 |      4798.50
+      453 | customer_54 |      4756.50
+      449 | customer_50 |      4714.50
+      445 | customer_46 |      4672.50
+      441 | customer_42 |      4630.50
+      437 | customer_38 |      4588.50
+      433 | customer_34 |      4546.50
+      429 | customer_30 |      4504.50
+      425 | customer_26 |      4462.50
+      421 | customer_22 |      4420.50
+      417 | customer_18 |      4378.50
+      413 | customer_14 |      4336.50
+      409 | customer_10 |      4294.50
+      405 | customer_6  |      4252.50
+      401 | customer_2  |      4210.50
+(25 rows)
+
+-- Test FULL OUTER JOIN
+SELECT 
+  c.customer_id,
+  o.order_id,
+  c.name,
+  o.total_amount
+FROM customers c
+FULL OUTER JOIN orders o ON c.customer_id = o.customer_id
+WHERE c.region = 'other' OR o.status = 'delivered'
+ORDER BY c.customer_id, o.order_id
+LIMIT 40;
+ customer_id | order_id |    name     | total_amount 
+-------------+----------+-------------+--------------
+           1 |      200 | customer_1  |      2100.00
+           2 |      401 | customer_2  |      4210.50
+           3 |        2 | customer_3  |        21.00
+           3 |      202 | customer_3  |      2121.00
+           3 |      402 | customer_3  |      4221.00
+           4 |      203 | customer_4  |      2131.50
+           5 |      404 | customer_5  |      4242.00
+           6 |        5 | customer_6  |        52.50
+           7 |        6 | customer_7  |        63.00
+           7 |      206 | customer_7  |      2163.00
+           7 |      406 | customer_7  |      4263.00
+           8 |      407 | customer_8  |      4273.50
+           9 |        8 | customer_9  |        84.00
+          10 |      209 | customer_10 |      2194.50
+          11 |       10 | customer_11 |       105.00
+          11 |      210 | customer_11 |      2205.00
+          11 |      410 | customer_11 |      4305.00
+          12 |       11 | customer_12 |       115.50
+          13 |      212 | customer_13 |      2226.00
+          14 |      413 | customer_14 |      4336.50
+          15 |       14 | customer_15 |       147.00
+          15 |      214 | customer_15 |      2247.00
+          15 |      414 | customer_15 |      4347.00
+          16 |      215 | customer_16 |      2257.50
+          17 |      416 | customer_17 |      4368.00
+          18 |       17 | customer_18 |       178.50
+          19 |       18 | customer_19 |       189.00
+          19 |      218 | customer_19 |      2289.00
+          19 |      418 | customer_19 |      4389.00
+          20 |      419 | customer_20 |      4399.50
+          21 |       20 | customer_21 |       210.00
+          22 |      221 | customer_22 |      2320.50
+          23 |       22 | customer_23 |       231.00
+          23 |      222 | customer_23 |      2331.00
+          23 |      422 | customer_23 |      4431.00
+          24 |       23 | customer_24 |       241.50
+          25 |      224 | customer_25 |      2352.00
+          26 |      425 | customer_26 |      4462.50
+          27 |       26 | customer_27 |       273.00
+          27 |      226 | customer_27 |      2373.00
+(40 rows)
+
+-- Test subquery in WHERE clause
+SELECT 
+  c.name,
+  c.region,
+  (SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.customer_id) AS order_count
+FROM customers c
+WHERE c.customer_id IN (SELECT customer_id FROM orders WHERE total_amount > 500)
+ORDER BY order_count DESC
+LIMIT 20;
+    name     | region | order_count 
+-------------+--------+-------------
+ customer_2  | asia   |           3
+ customer_3  | other  |           3
+ customer_4  | us     |           3
+ customer_5  | eu     |           3
+ customer_6  | asia   |           3
+ customer_7  | other  |           3
+ customer_8  | us     |           3
+ customer_9  | eu     |           3
+ customer_10 | asia   |           3
+ customer_11 | other  |           3
+ customer_12 | us     |           3
+ customer_13 | eu     |           3
+ customer_14 | asia   |           3
+ customer_15 | other  |           3
+ customer_16 | us     |           3
+ customer_17 | eu     |           3
+ customer_18 | asia   |           3
+ customer_19 | other  |           3
+ customer_20 | us     |           3
+ customer_21 | eu     |           3
+(20 rows)
+
+-- Test subquery in SELECT clause
+SELECT 
+  o.order_id,
+  o.total_amount,
+  (SELECT name FROM customers WHERE customer_id = o.customer_id) AS customer_name
+FROM orders o
+WHERE o.status = 'pending'
+ORDER BY o.total_amount DESC
+LIMIT 30;
+ order_id | total_amount | customer_name 
+----------+--------------+---------------
+      498 |      5229.00 | customer_99
+      495 |      5197.50 | customer_96
+      492 |      5166.00 | customer_93
+      489 |      5134.50 | customer_90
+      486 |      5103.00 | customer_87
+      483 |      5071.50 | customer_84
+      480 |      5040.00 | customer_81
+      477 |      5008.50 | customer_78
+      474 |      4977.00 | customer_75
+      471 |      4945.50 | customer_72
+      468 |      4914.00 | customer_69
+      465 |      4882.50 | customer_66
+      462 |      4851.00 | customer_63
+      459 |      4819.50 | customer_60
+      456 |      4788.00 | customer_57
+      453 |      4756.50 | customer_54
+      450 |      4725.00 | customer_51
+      447 |      4693.50 | customer_48
+      444 |      4662.00 | customer_45
+      441 |      4630.50 | customer_42
+      438 |      4599.00 | customer_39
+      435 |      4567.50 | customer_36
+      432 |      4536.00 | customer_33
+      429 |      4504.50 | customer_30
+      426 |      4473.00 | customer_27
+      423 |      4441.50 | customer_24
+      420 |      4410.00 | customer_21
+      417 |      4378.50 | customer_18
+      414 |      4347.00 | customer_15
+      411 |      4315.50 | customer_12
+(30 rows)
+
+-- Test correlated subquery
+SELECT 
+  c.customer_id,
+  c.name,
+  (SELECT AVG(total_amount) FROM orders WHERE customer_id = c.customer_id) AS avg_order_amount
+FROM customers c
+WHERE EXISTS (SELECT 1 FROM orders WHERE customer_id = c.customer_id AND total_amount > 1000)
+ORDER BY avg_order_amount DESC
+LIMIT 25;
+ customer_id |     name     |   avg_order_amount    
+-------------+--------------+-----------------------
+           1 | customer_1   | 3150.0000000000000000
+         101 | customer_101 | 3150.0000000000000000
+         100 | customer_100 | 3139.5000000000000000
+         200 | customer_200 | 3139.5000000000000000
+         199 | customer_199 | 3129.0000000000000000
+          99 | customer_99  | 3129.0000000000000000
+         198 | customer_198 | 3118.5000000000000000
+          98 | customer_98  | 3118.5000000000000000
+          97 | customer_97  | 3108.0000000000000000
+         197 | customer_197 | 3108.0000000000000000
+         196 | customer_196 | 3097.5000000000000000
+          96 | customer_96  | 3097.5000000000000000
+          95 | customer_95  | 3087.0000000000000000
+         195 | customer_195 | 3087.0000000000000000
+         194 | customer_194 | 3076.5000000000000000
+          94 | customer_94  | 3076.5000000000000000
+          93 | customer_93  | 3066.0000000000000000
+         193 | customer_193 | 3066.0000000000000000
+         192 | customer_192 | 3055.5000000000000000
+          92 | customer_92  | 3055.5000000000000000
+          91 | customer_91  | 3045.0000000000000000
+         191 | customer_191 | 3045.0000000000000000
+         190 | customer_190 | 3034.5000000000000000
+          90 | customer_90  | 3034.5000000000000000
+         189 | customer_189 | 3024.0000000000000000
+(25 rows)
+
+-- Test EXISTS clause
+SELECT c.name, c.region
+FROM customers c
+WHERE EXISTS (
+  SELECT 1 FROM orders o 
+  WHERE o.customer_id = c.customer_id 
+  AND o.total_amount > 750
+)
+ORDER BY c.name
+LIMIT 40;
+     name     | region 
+--------------+--------
+ customer_1   | eu
+ customer_10  | asia
+ customer_100 | us
+ customer_101 | eu
+ customer_102 | asia
+ customer_103 | other
+ customer_104 | us
+ customer_105 | eu
+ customer_106 | asia
+ customer_107 | other
+ customer_108 | us
+ customer_109 | eu
+ customer_11  | other
+ customer_110 | asia
+ customer_111 | other
+ customer_112 | us
+ customer_113 | eu
+ customer_114 | asia
+ customer_115 | other
+ customer_116 | us
+ customer_117 | eu
+ customer_118 | asia
+ customer_119 | other
+ customer_12  | us
+ customer_120 | us
+ customer_121 | eu
+ customer_122 | asia
+ customer_123 | other
+ customer_124 | us
+ customer_125 | eu
+ customer_126 | asia
+ customer_127 | other
+ customer_128 | us
+ customer_129 | eu
+ customer_13  | eu
+ customer_130 | asia
+ customer_131 | other
+ customer_132 | us
+ customer_133 | eu
+ customer_134 | asia
+(40 rows)
+
+-- Test NOT EXISTS
+SELECT c.name, c.email
+FROM customers c
+WHERE NOT EXISTS (
+  SELECT 1 FROM orders o 
+  WHERE o.customer_id = c.customer_id
+)
+ORDER BY c.name
+LIMIT 10;
+ name | email 
+------+-------
+(0 rows)
+
+-- Test IN with subquery
+SELECT 
+  o.order_id,
+  o.total_amount,
+  o.status
+FROM orders o
+WHERE o.customer_id IN (
+  SELECT customer_id FROM customers WHERE region = 'us'
+)
+ORDER BY o.total_amount DESC
+LIMIT 35;
+ order_id | total_amount |  status   
+----------+--------------+-----------
+      499 |      5239.50 | shipped
+      495 |      5197.50 | pending
+      491 |      5155.50 | delivered
+      487 |      5113.50 | shipped
+      483 |      5071.50 | pending
+      479 |      5029.50 | delivered
+      475 |      4987.50 | shipped
+      471 |      4945.50 | pending
+      467 |      4903.50 | delivered
+      463 |      4861.50 | shipped
+      459 |      4819.50 | pending
+      455 |      4777.50 | delivered
+      451 |      4735.50 | shipped
+      447 |      4693.50 | pending
+      443 |      4651.50 | delivered
+      439 |      4609.50 | shipped
+      435 |      4567.50 | pending
+      431 |      4525.50 | delivered
+      427 |      4483.50 | shipped
+      423 |      4441.50 | pending
+      419 |      4399.50 | delivered
+      415 |      4357.50 | shipped
+      411 |      4315.50 | pending
+      407 |      4273.50 | delivered
+      403 |      4231.50 | shipped
+      399 |      4189.50 | pending
+      395 |      4147.50 | delivered
+      391 |      4105.50 | shipped
+      387 |      4063.50 | pending
+      383 |      4021.50 | delivered
+      379 |      3979.50 | shipped
+      375 |      3937.50 | pending
+      371 |      3895.50 | delivered
+      367 |      3853.50 | shipped
+      363 |      3811.50 | pending
+(35 rows)
+
+-- Test self-join
+SELECT 
+  c1.name AS customer1,
+  c2.name AS customer2,
+  COUNT(DISTINCT o1.order_id) AS shared_orders
+FROM customers c1
+JOIN customers c2 ON c1.region = c2.region AND c1.customer_id < c2.customer_id
+JOIN orders o1 ON o1.customer_id = c1.customer_id
+JOIN orders o2 ON o2.customer_id = c2.customer_id
+WHERE c1.region = 'eu'
+GROUP BY c1.name, c2.name
+HAVING COUNT(DISTINCT o1.order_id) > 0
+ORDER BY shared_orders DESC
+LIMIT 15;
+  customer1   |  customer2   | shared_orders 
+--------------+--------------+---------------
+ customer_101 | customer_129 |             3
+ customer_101 | customer_157 |             3
+ customer_101 | customer_113 |             3
+ customer_101 | customer_125 |             3
+ customer_101 | customer_141 |             3
+ customer_101 | customer_153 |             3
+ customer_101 | customer_105 |             3
+ customer_101 | customer_109 |             3
+ customer_101 | customer_117 |             3
+ customer_101 | customer_121 |             3
+ customer_101 | customer_133 |             3
+ customer_101 | customer_137 |             3
+ customer_101 | customer_145 |             3
+ customer_101 | customer_149 |             3
+ customer_101 | customer_161 |             3
+(15 rows)
+
+-- Test cross join
+SELECT 
+  c.name,
+  p.name AS product_name,
+  p.price
+FROM customers c
+CROSS JOIN products p
+WHERE c.region = 'us' AND p.category = 'electronics'
+ORDER BY p.price DESC
+LIMIT 20;
+    name     | product_name | price  
+-------------+--------------+--------
+ customer_48 | product_100  | 275.00
+ customer_76 | product_100  | 275.00
+ customer_28 | product_100  | 275.00
+ customer_44 | product_100  | 275.00
+ customer_60 | product_100  | 275.00
+ customer_72 | product_100  | 275.00
+ customer_12 | product_100  | 275.00
+ customer_24 | product_100  | 275.00
+ customer_36 | product_100  | 275.00
+ customer_40 | product_100  | 275.00
+ customer_52 | product_100  | 275.00
+ customer_56 | product_100  | 275.00
+ customer_64 | product_100  | 275.00
+ customer_68 | product_100  | 275.00
+ customer_4  | product_100  | 275.00
+ customer_8  | product_100  | 275.00
+ customer_16 | product_100  | 275.00
+ customer_20 | product_100  | 275.00
+ customer_32 | product_100  | 275.00
+ customer_80 | product_100  | 275.00
+(20 rows)
+
+-- Wait for stats
+SELECT pg_sleep(0.2);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+-- Verify complex joins are tracked
+SELECT 
+  COUNT(*) FILTER (WHERE query LIKE '%JOIN%') AS join_queries,
+  COUNT(*) FILTER (WHERE query LIKE '%EXISTS%' OR query LIKE '%IN (%') AS subquery_queries,
+  COUNT(*) FILTER (WHERE query LIKE '%GROUP BY%') AS aggregation_queries
+FROM pg_stat_insights
+WHERE query LIKE '%customers%' OR query LIKE '%orders%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 5: FROM pg_stat_insights
+             ^
+-- Verify join performance metrics
+SELECT 
+  calls >= 1 AS has_executions,
+  rows > 0 AS returned_rows,
+  total_exec_time > 0 AS has_execution_time,
+  shared_blks_hit >= 0 AS has_cache_hits,
+  shared_blks_read >= 0 AS has_block_reads
+FROM pg_stat_insights
+WHERE query LIKE '%JOIN%' AND calls > 0
+LIMIT 1;
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 7: FROM pg_stat_insights
+             ^

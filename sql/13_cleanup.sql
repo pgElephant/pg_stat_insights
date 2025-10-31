@@ -1,0 +1,28 @@
+-- ============================================================================
+-- Test 13: Cleanup and Final Validation
+-- Final checks and cleanup
+-- ============================================================================
+
+-- Test that reset works properly
+SELECT pg_stat_insights_reset();
+
+-- Verify reset cleared everything
+SELECT COUNT(*) AS should_be_zero FROM pg_stat_insights;
+
+-- Generate one final query
+SELECT 1 AS final_test;
+
+-- Wait briefly
+SELECT pg_sleep(0.1);
+
+-- Verify statistics collection still works after reset
+SELECT COUNT(*) > 0 AS stats_working_after_reset FROM pg_stat_insights;
+
+-- Drop the extension (cleanup)
+DROP EXTENSION pg_stat_insights CASCADE;
+
+-- Verify extension is removed
+SELECT COUNT(*) AS extension_should_be_gone 
+FROM pg_extension 
+WHERE extname = 'pg_stat_insights';
+

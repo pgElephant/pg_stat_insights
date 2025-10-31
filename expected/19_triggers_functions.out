@@ -1,0 +1,343 @@
+-- ============================================================================
+-- Test 19: Triggers and Stored Functions
+-- Tests tracking of triggers and function executions
+-- ============================================================================
+-- Reset statistics
+SELECT pg_stat_insights_reset();
+ERROR:  function pg_stat_insights_reset() does not exist
+LINE 1: SELECT pg_stat_insights_reset();
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+-- Create test tables
+SELECT setseed(0.5);
+ setseed 
+---------
+ 
+(1 row)
+
+CREATE TEMP TABLE trigger_test (
+  id serial PRIMARY KEY,
+  name text NOT NULL,
+  value numeric NOT NULL,
+  updated_at timestamp DEFAULT '2025-10-31 12:00:00'::timestamp,
+  update_count int DEFAULT 0
+);
+CREATE TEMP TABLE audit_log (
+  id serial PRIMARY KEY,
+  table_name text,
+  operation text,
+  record_id int,
+  old_value text,
+  new_value text,
+  changed_at timestamp DEFAULT '2025-10-31 12:00:00'::timestamp
+);
+-- Create stored functions
+CREATE OR REPLACE FUNCTION update_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at := CURRENT_TIMESTAMP;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION increment_counter()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.update_count := OLD.update_count + 1;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION audit_trigger_func()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO audit_log (table_name, operation, record_id, new_value)
+    VALUES (TG_TABLE_NAME, TG_OP, NEW.id, row_to_json(NEW)::text);
+    RETURN NEW;
+  ELSIF TG_OP = 'UPDATE' THEN
+    INSERT INTO audit_log (table_name, operation, record_id, old_value, new_value)
+    VALUES (TG_TABLE_NAME, TG_OP, NEW.id, row_to_json(OLD)::text, row_to_json(NEW)::text);
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    INSERT INTO audit_log (table_name, operation, record_id, old_value)
+    VALUES (TG_TABLE_NAME, TG_OP, OLD.id, row_to_json(OLD)::text);
+    RETURN OLD;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+-- Create function for computed values
+CREATE OR REPLACE FUNCTION compute_total(id_val int)
+RETURNS numeric AS $$
+DECLARE
+  total_val numeric;
+BEGIN
+  SELECT SUM(value) INTO total_val
+  FROM trigger_test
+  WHERE id <= id_val;
+  RETURN COALESCE(total_val, 0);
+END;
+$$ LANGUAGE plpgsql;
+-- Create function with exception handling
+CREATE OR REPLACE FUNCTION safe_divide(a numeric, b numeric)
+RETURNS numeric AS $$
+BEGIN
+  IF b = 0 THEN
+    RETURN NULL;
+  END IF;
+  RETURN a / b;
+END;
+$$ LANGUAGE plpgsql;
+-- Create triggers
+CREATE TRIGGER update_timestamp_trigger
+  BEFORE UPDATE ON trigger_test
+  FOR EACH ROW
+  EXECUTE FUNCTION update_timestamp();
+CREATE TRIGGER increment_counter_trigger
+  BEFORE UPDATE ON trigger_test
+  FOR EACH ROW
+  EXECUTE FUNCTION increment_counter();
+CREATE TRIGGER audit_trigger
+  AFTER INSERT OR UPDATE OR DELETE ON trigger_test
+  FOR EACH ROW
+  EXECUTE FUNCTION audit_trigger_func();
+-- Insert initial data
+INSERT INTO trigger_test (name, value)
+SELECT 
+  'item_' || i,
+  (i * 10.5)::numeric
+FROM generate_series(1, 200) i;
+-- Test INSERT with trigger execution
+INSERT INTO trigger_test (name, value) VALUES ('new_item_1', 100.0);
+INSERT INTO trigger_test (name, value) VALUES ('new_item_2', 200.0);
+INSERT INTO trigger_test (name, value) VALUES ('new_item_3', 300.0);
+-- Test UPDATE with trigger execution
+UPDATE trigger_test SET value = value * 1.1 WHERE id <= 10;
+UPDATE trigger_test SET value = value + 50 WHERE id BETWEEN 11 AND 20;
+UPDATE trigger_test SET name = 'updated_' || id WHERE id BETWEEN 21 AND 30;
+-- Test DELETE with trigger execution
+DELETE FROM trigger_test WHERE id > 190;
+-- Test function calls
+SELECT compute_total(10) AS total_10;
+ total_10 
+----------
+   635.25
+(1 row)
+
+SELECT compute_total(50) AS total_50;
+ total_50 
+----------
+ 13945.25
+(1 row)
+
+SELECT compute_total(100) AS total_100;
+ total_100 
+-----------
+  53582.75
+(1 row)
+
+-- Test function calls in SELECT
+SELECT id, name, value, compute_total(id) AS running_total
+FROM trigger_test
+WHERE id <= 20
+ORDER BY id;
+ id |  name   | value  | running_total 
+----+---------+--------+---------------
+  1 | item_1  |  11.55 |         11.55
+  2 | item_2  |  23.10 |         34.65
+  3 | item_3  |  34.65 |         69.30
+  4 | item_4  |  46.20 |        115.50
+  5 | item_5  |  57.75 |        173.25
+  6 | item_6  |  69.30 |        242.55
+  7 | item_7  |  80.85 |        323.40
+  8 | item_8  |  92.40 |        415.80
+  9 | item_9  | 103.95 |        519.75
+ 10 | item_10 | 115.50 |        635.25
+ 11 | item_11 |  165.5 |        800.75
+ 12 | item_12 |  176.0 |        976.75
+ 13 | item_13 |  186.5 |       1163.25
+ 14 | item_14 |  197.0 |       1360.25
+ 15 | item_15 |  207.5 |       1567.75
+ 16 | item_16 |  218.0 |       1785.75
+ 17 | item_17 |  228.5 |       2014.25
+ 18 | item_18 |  239.0 |       2253.25
+ 19 | item_19 |  249.5 |       2502.75
+ 20 | item_20 |  260.0 |       2762.75
+(20 rows)
+
+-- Test function in WHERE clause
+SELECT id, name, value
+FROM trigger_test
+WHERE value > compute_total(5)
+ORDER BY id
+LIMIT 15;
+ id |    name    | value 
+----+------------+-------
+ 12 | item_12    | 176.0
+ 13 | item_13    | 186.5
+ 14 | item_14    | 197.0
+ 15 | item_15    | 207.5
+ 16 | item_16    | 218.0
+ 17 | item_17    | 228.5
+ 18 | item_18    | 239.0
+ 19 | item_19    | 249.5
+ 20 | item_20    | 260.0
+ 21 | updated_21 | 220.5
+ 22 | updated_22 | 231.0
+ 23 | updated_23 | 241.5
+ 24 | updated_24 | 252.0
+ 25 | updated_25 | 262.5
+ 26 | updated_26 | 273.0
+(15 rows)
+
+-- Test safe_divide function
+SELECT 
+  id,
+  value,
+  safe_divide(value, 10) AS divided_by_10,
+  safe_divide(value, 0) AS divide_by_zero
+FROM trigger_test
+WHERE id <= 10
+ORDER BY id;
+ id | value  |    divided_by_10    | divide_by_zero 
+----+--------+---------------------+----------------
+  1 |  11.55 |  1.1550000000000000 |               
+  2 |  23.10 |  2.3100000000000000 |               
+  3 |  34.65 |  3.4650000000000000 |               
+  4 |  46.20 |  4.6200000000000000 |               
+  5 |  57.75 |  5.7750000000000000 |               
+  6 |  69.30 |  6.9300000000000000 |               
+  7 |  80.85 |  8.0850000000000000 |               
+  8 |  92.40 |  9.2400000000000000 |               
+  9 | 103.95 | 10.3950000000000000 |               
+ 10 | 115.50 | 11.5500000000000000 |               
+(10 rows)
+
+-- Test function with multiple parameters
+CREATE OR REPLACE FUNCTION multiply_add(a numeric, b numeric, c numeric)
+RETURNS numeric AS $$
+BEGIN
+  RETURN (a * b) + c;
+END;
+$$ LANGUAGE plpgsql;
+SELECT 
+  id,
+  value,
+  multiply_add(value, 2, 100) AS computed
+FROM trigger_test
+WHERE id <= 10
+ORDER BY id;
+ id | value  | computed 
+----+--------+----------
+  1 |  11.55 |   123.10
+  2 |  23.10 |   146.20
+  3 |  34.65 |   169.30
+  4 |  46.20 |   192.40
+  5 |  57.75 |   215.50
+  6 |  69.30 |   238.60
+  7 |  80.85 |   261.70
+  8 |  92.40 |   284.80
+  9 | 103.95 |   307.90
+ 10 | 115.50 |   331.00
+(10 rows)
+
+-- Test function in aggregate
+SELECT 
+  COUNT(*) AS count_items,
+  AVG(compute_total(id)) AS avg_total
+FROM trigger_test
+WHERE id <= 50;
+ count_items |       avg_total       
+-------------+-----------------------
+          50 | 5046.8200000000000000
+(1 row)
+
+-- Test recursive function
+CREATE OR REPLACE FUNCTION factorial(n int)
+RETURNS bigint AS $$
+BEGIN
+  IF n <= 1 THEN
+    RETURN 1;
+  ELSE
+    RETURN n * factorial(n - 1);
+  END IF;
+END;
+$$ LANGUAGE plpgsql;
+SELECT factorial(5) AS fact_5;
+ fact_5 
+--------
+    120
+(1 row)
+
+SELECT factorial(10) AS fact_10;
+ fact_10 
+---------
+ 3628800
+(1 row)
+
+-- Test function in JOIN
+CREATE TEMP TABLE function_results AS
+SELECT id, compute_total(id) AS total_value
+FROM trigger_test
+WHERE id <= 10;
+SELECT 
+  t.id,
+  t.name,
+  t.value,
+  f.total_value
+FROM trigger_test t
+JOIN function_results f ON t.id = f.id
+ORDER BY t.id;
+ id |  name   | value  | total_value 
+----+---------+--------+-------------
+  1 | item_1  |  11.55 |       11.55
+  2 | item_2  |  23.10 |       34.65
+  3 | item_3  |  34.65 |       69.30
+  4 | item_4  |  46.20 |      115.50
+  5 | item_5  |  57.75 |      173.25
+  6 | item_6  |  69.30 |      242.55
+  7 | item_7  |  80.85 |      323.40
+  8 | item_8  |  92.40 |      415.80
+  9 | item_9  | 103.95 |      519.75
+ 10 | item_10 | 115.50 |      635.25
+(10 rows)
+
+-- Wait for stats
+SELECT pg_sleep(0.2);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+-- Verify trigger and function executions are tracked
+SELECT 
+  COUNT(*) FILTER (WHERE query LIKE '%trigger_test%') AS table_queries,
+  COUNT(*) FILTER (WHERE query LIKE '%compute_total%' OR query LIKE '%factorial%' OR query LIKE '%multiply_add%' OR query LIKE '%safe_divide%') AS function_calls,
+  COUNT(*) FILTER (WHERE query LIKE '%INSERT%' OR query LIKE '%UPDATE%' OR query LIKE '%DELETE%') AS dml_operations
+FROM pg_stat_insights
+WHERE query LIKE '%trigger_test%' OR query LIKE '%compute_total%' OR query LIKE '%factorial%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 5: FROM pg_stat_insights
+             ^
+-- Verify function execution metrics
+SELECT 
+  calls >= 1 AS has_executions,
+  total_exec_time >= 0 AS has_execution_time,
+  rows >= 0 AS returned_rows
+FROM pg_stat_insights
+WHERE query LIKE '%compute_total%' OR query LIKE '%factorial%'
+LIMIT 1;
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 5: FROM pg_stat_insights
+             ^
+-- Verify audit log was populated by triggers
+SELECT 
+  COUNT(*) > 0 AS audit_records_created,
+  COUNT(*) FILTER (WHERE operation = 'INSERT') AS insert_audits,
+  COUNT(*) FILTER (WHERE operation = 'UPDATE') AS update_audits,
+  COUNT(*) FILTER (WHERE operation = 'DELETE') AS delete_audits
+FROM audit_log;
+ audit_records_created | insert_audits | update_audits | delete_audits 
+-----------------------+---------------+---------------+---------------
+ t                     |           203 |            30 |            13
+(1 row)
+

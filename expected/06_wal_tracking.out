@@ -1,0 +1,82 @@
+-- ============================================================================
+-- Test 6: WAL Statistics Tracking
+-- Tests WAL records, FPI, and bytes tracking
+-- ============================================================================
+-- Reset statistics
+SELECT pg_stat_insights_reset();
+ pg_stat_insights_reset 
+------------------------
+ 
+(1 row)
+
+-- Create table and generate WAL activity
+CREATE TEMP TABLE wal_test (
+  id serial PRIMARY KEY,
+  data text,
+  modified_at timestamp DEFAULT now()
+);
+-- INSERT generates WAL
+INSERT INTO wal_test (data) 
+SELECT 'test_data_' || i FROM generate_series(1, 100) i;
+-- UPDATE generates more WAL
+UPDATE wal_test SET data = 'updated_' || id, modified_at = now() WHERE id <= 50;
+-- DELETE generates WAL
+DELETE FROM wal_test WHERE id > 90;
+-- Wait for stats
+SELECT pg_sleep(0.1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+-- Test WAL statistics are collected
+SELECT 
+  COUNT(*) FILTER (WHERE wal_records > 0) AS queries_with_wal_records,
+  COUNT(*) FILTER (WHERE wal_bytes > 0) AS queries_with_wal_bytes,
+  COUNT(*) FILTER (WHERE wal_fpi >= 0) AS queries_with_fpi
+FROM pg_stat_insights
+WHERE query LIKE '%wal_test%';
+ queries_with_wal_records | queries_with_wal_bytes | queries_with_fpi 
+--------------------------+------------------------+------------------
+                        1 |                      1 |                4
+(1 row)
+
+-- Verify WAL statistics are reasonable
+SELECT 
+  wal_records >= 0 AS wal_records_valid,
+  wal_bytes >= 0 AS wal_bytes_valid,
+  wal_fpi >= 0 AS wal_fpi_valid,
+  wal_buffers_full >= 0 AS wal_buffers_valid
+FROM pg_stat_insights
+WHERE wal_records > 0
+LIMIT 1;
+ wal_records_valid | wal_bytes_valid | wal_fpi_valid | wal_buffers_valid 
+-------------------+-----------------+---------------+-------------------
+ t                 | t               | t             | t
+(1 row)
+
+-- Test that UPDATE generates more WAL than SELECT
+SELECT 
+  (SELECT SUM(wal_bytes) FROM pg_stat_insights WHERE query LIKE '%UPDATE wal_test%') >
+  (SELECT SUM(wal_bytes) FROM pg_stat_insights WHERE query LIKE '%SELECT%wal_test%') OR
+  (SELECT SUM(wal_bytes) FROM pg_stat_insights WHERE query LIKE '%SELECT%wal_test%') IS NULL
+  AS update_generates_more_wal;
+ update_generates_more_wal 
+---------------------------
+ t
+(1 row)
+
+-- Verify WAL bytes and records correlation
+SELECT 
+  CASE 
+    WHEN wal_records > 0 THEN wal_bytes > 0
+    ELSE wal_bytes >= 0
+  END AS wal_correlation_valid
+FROM pg_stat_insights
+WHERE calls > 0
+LIMIT 1;
+ wal_correlation_valid 
+-----------------------
+ t
+(1 row)
+

@@ -1,0 +1,76 @@
+-- ============================================================================
+-- Test 8: Parallel Query Tracking
+-- Tests parallel worker statistics
+-- ============================================================================
+-- Reset statistics
+SELECT pg_stat_insights_reset();
+ pg_stat_insights_reset 
+------------------------
+ 
+(1 row)
+
+-- Enable parallel query (if possible)
+SET max_parallel_workers_per_gather = 2;
+SET parallel_setup_cost = 0;
+SET parallel_tuple_cost = 0;
+SET min_parallel_table_scan_size = 0;
+-- Create table large enough to trigger parallel scan
+SELECT setseed(0.5); -- Set seed for deterministic values
+ setseed 
+---------
+ 
+(1 row)
+
+CREATE TEMP TABLE parallel_test AS
+SELECT i, md5(i::text), i * 0.456 AS random
+FROM generate_series(1, 10000) i;
+-- Force parallel scan with aggregation
+SELECT COUNT(*), SUM(random), AVG(random)
+FROM parallel_test;
+ count |     sum      |          avg          
+-------+--------------+-----------------------
+ 10000 | 22802280.000 | 2280.2280000000000000
+(1 row)
+
+-- Wait for stats
+SELECT pg_sleep(0.1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+-- Test parallel worker statistics
+SELECT 
+  parallel_workers_to_launch >= 0 AS workers_to_launch_valid,
+  parallel_workers_launched >= 0 AS workers_launched_valid,
+  parallel_workers_launched <= parallel_workers_to_launch AS workers_consistent
+FROM pg_stat_insights
+WHERE query LIKE '%parallel_test%' AND calls > 0
+LIMIT 1;
+ workers_to_launch_valid | workers_launched_valid | workers_consistent 
+-------------------------+------------------------+--------------------
+ t                       | t                      | t
+(1 row)
+
+-- Verify parallel stats exist
+SELECT 
+  COUNT(*) FILTER (WHERE parallel_workers_to_launch > 0) AS queries_planned_parallel,
+  COUNT(*) FILTER (WHERE parallel_workers_launched > 0) AS queries_used_parallel
+FROM pg_stat_insights
+WHERE query LIKE '%parallel_test%';
+ queries_planned_parallel | queries_used_parallel 
+--------------------------+-----------------------
+                        0 |                     0
+(1 row)
+
+-- Test that toplevel field is tracked
+SELECT 
+  COUNT(*) FILTER (WHERE toplevel = true) AS toplevel_queries,
+  COUNT(*) FILTER (WHERE toplevel = false) AS non_toplevel_queries
+FROM pg_stat_insights
+WHERE calls > 0;
+ toplevel_queries | non_toplevel_queries 
+------------------+----------------------
+               11 |                    0
+(1 row)
+

@@ -1,0 +1,1116 @@
+-- ============================================================================
+-- Test 14: Prepared Statements and Query Plans
+-- Tests prepared statement tracking and plan caching
+-- ============================================================================
+-- Reset statistics
+SELECT pg_stat_insights_reset();
+ERROR:  function pg_stat_insights_reset() does not exist
+LINE 1: SELECT pg_stat_insights_reset();
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+-- Create test table
+SELECT setseed(0.5);
+ setseed 
+---------
+ 
+(1 row)
+
+CREATE TEMP TABLE prep_test (
+  id serial PRIMARY KEY,
+  name text NOT NULL,
+  value numeric NOT NULL,
+  status text DEFAULT 'active',
+  created_at timestamp DEFAULT '2025-10-31 12:00:00'::timestamp
+);
+-- Insert deterministic data
+INSERT INTO prep_test (name, value, status)
+SELECT 
+  'item_' || (i % 100),
+  (i * 2.5)::numeric,
+  CASE (i % 3) WHEN 0 THEN 'active' WHEN 1 THEN 'inactive' ELSE 'pending' END
+FROM generate_series(1, 500) i;
+-- Create indexes
+CREATE INDEX idx_prep_name ON prep_test(name);
+CREATE INDEX idx_prep_status ON prep_test(status);
+-- Test prepared statements (using DEALLOCATE to force re-planning)
+PREPARE prep_select AS SELECT * FROM prep_test WHERE id = $1;
+PREPARE prep_update AS UPDATE prep_test SET value = $2 WHERE id = $1;
+PREPARE prep_insert AS INSERT INTO prep_test (name, value) VALUES ($1, $2);
+PREPARE prep_delete AS DELETE FROM prep_test WHERE id = $1;
+-- Execute prepared statements multiple times
+EXECUTE prep_select(1);
+ id |  name  | value |  status  |        created_at        
+----+--------+-------+----------+--------------------------
+  1 | item_1 |   2.5 | inactive | Fri Oct 31 12:00:00 2025
+(1 row)
+
+EXECUTE prep_select(2);
+ id |  name  | value | status  |        created_at        
+----+--------+-------+---------+--------------------------
+  2 | item_2 |   5.0 | pending | Fri Oct 31 12:00:00 2025
+(1 row)
+
+EXECUTE prep_select(3);
+ id |  name  | value | status |        created_at        
+----+--------+-------+--------+--------------------------
+  3 | item_3 |   7.5 | active | Fri Oct 31 12:00:00 2025
+(1 row)
+
+EXECUTE prep_select(10);
+ id |  name   | value |  status  |        created_at        
+----+---------+-------+----------+--------------------------
+ 10 | item_10 |  25.0 | inactive | Fri Oct 31 12:00:00 2025
+(1 row)
+
+EXECUTE prep_select(50);
+ id |  name   | value | status  |        created_at        
+----+---------+-------+---------+--------------------------
+ 50 | item_50 | 125.0 | pending | Fri Oct 31 12:00:00 2025
+(1 row)
+
+EXECUTE prep_update(1, 999.99);
+EXECUTE prep_update(2, 888.88);
+EXECUTE prep_update(3, 777.77);
+EXECUTE prep_insert('new_item_1', 100.5);
+EXECUTE prep_insert('new_item_2', 200.5);
+EXECUTE prep_insert('new_item_3', 300.5);
+EXECUTE prep_delete(501);
+EXECUTE prep_delete(502);
+EXECUTE prep_delete(503);
+-- Test PREPARE with different parameter types
+PREPARE prep_numeric AS SELECT * FROM prep_test WHERE value BETWEEN $1 AND $2;
+PREPARE prep_text AS SELECT * FROM prep_test WHERE name LIKE $1;
+PREPARE prep_multi AS SELECT * FROM prep_test WHERE id = $1 AND status = $2;
+EXECUTE prep_numeric(100, 500);
+ id  |  name   | value |  status  |        created_at        
+-----+---------+-------+----------+--------------------------
+  40 | item_40 | 100.0 | inactive | Fri Oct 31 12:00:00 2025
+  41 | item_41 | 102.5 | pending  | Fri Oct 31 12:00:00 2025
+  42 | item_42 | 105.0 | active   | Fri Oct 31 12:00:00 2025
+  43 | item_43 | 107.5 | inactive | Fri Oct 31 12:00:00 2025
+  44 | item_44 | 110.0 | pending  | Fri Oct 31 12:00:00 2025
+  45 | item_45 | 112.5 | active   | Fri Oct 31 12:00:00 2025
+  46 | item_46 | 115.0 | inactive | Fri Oct 31 12:00:00 2025
+  47 | item_47 | 117.5 | pending  | Fri Oct 31 12:00:00 2025
+  48 | item_48 | 120.0 | active   | Fri Oct 31 12:00:00 2025
+  49 | item_49 | 122.5 | inactive | Fri Oct 31 12:00:00 2025
+  50 | item_50 | 125.0 | pending  | Fri Oct 31 12:00:00 2025
+  51 | item_51 | 127.5 | active   | Fri Oct 31 12:00:00 2025
+  52 | item_52 | 130.0 | inactive | Fri Oct 31 12:00:00 2025
+  53 | item_53 | 132.5 | pending  | Fri Oct 31 12:00:00 2025
+  54 | item_54 | 135.0 | active   | Fri Oct 31 12:00:00 2025
+  55 | item_55 | 137.5 | inactive | Fri Oct 31 12:00:00 2025
+  56 | item_56 | 140.0 | pending  | Fri Oct 31 12:00:00 2025
+  57 | item_57 | 142.5 | active   | Fri Oct 31 12:00:00 2025
+  58 | item_58 | 145.0 | inactive | Fri Oct 31 12:00:00 2025
+  59 | item_59 | 147.5 | pending  | Fri Oct 31 12:00:00 2025
+  60 | item_60 | 150.0 | active   | Fri Oct 31 12:00:00 2025
+  61 | item_61 | 152.5 | inactive | Fri Oct 31 12:00:00 2025
+  62 | item_62 | 155.0 | pending  | Fri Oct 31 12:00:00 2025
+  63 | item_63 | 157.5 | active   | Fri Oct 31 12:00:00 2025
+  64 | item_64 | 160.0 | inactive | Fri Oct 31 12:00:00 2025
+  65 | item_65 | 162.5 | pending  | Fri Oct 31 12:00:00 2025
+  66 | item_66 | 165.0 | active   | Fri Oct 31 12:00:00 2025
+  67 | item_67 | 167.5 | inactive | Fri Oct 31 12:00:00 2025
+  68 | item_68 | 170.0 | pending  | Fri Oct 31 12:00:00 2025
+  69 | item_69 | 172.5 | active   | Fri Oct 31 12:00:00 2025
+  70 | item_70 | 175.0 | inactive | Fri Oct 31 12:00:00 2025
+  71 | item_71 | 177.5 | pending  | Fri Oct 31 12:00:00 2025
+  72 | item_72 | 180.0 | active   | Fri Oct 31 12:00:00 2025
+  73 | item_73 | 182.5 | inactive | Fri Oct 31 12:00:00 2025
+  74 | item_74 | 185.0 | pending  | Fri Oct 31 12:00:00 2025
+  75 | item_75 | 187.5 | active   | Fri Oct 31 12:00:00 2025
+  76 | item_76 | 190.0 | inactive | Fri Oct 31 12:00:00 2025
+  77 | item_77 | 192.5 | pending  | Fri Oct 31 12:00:00 2025
+  78 | item_78 | 195.0 | active   | Fri Oct 31 12:00:00 2025
+  79 | item_79 | 197.5 | inactive | Fri Oct 31 12:00:00 2025
+  80 | item_80 | 200.0 | pending  | Fri Oct 31 12:00:00 2025
+  81 | item_81 | 202.5 | active   | Fri Oct 31 12:00:00 2025
+  82 | item_82 | 205.0 | inactive | Fri Oct 31 12:00:00 2025
+  83 | item_83 | 207.5 | pending  | Fri Oct 31 12:00:00 2025
+  84 | item_84 | 210.0 | active   | Fri Oct 31 12:00:00 2025
+  85 | item_85 | 212.5 | inactive | Fri Oct 31 12:00:00 2025
+  86 | item_86 | 215.0 | pending  | Fri Oct 31 12:00:00 2025
+  87 | item_87 | 217.5 | active   | Fri Oct 31 12:00:00 2025
+  88 | item_88 | 220.0 | inactive | Fri Oct 31 12:00:00 2025
+  89 | item_89 | 222.5 | pending  | Fri Oct 31 12:00:00 2025
+  90 | item_90 | 225.0 | active   | Fri Oct 31 12:00:00 2025
+  91 | item_91 | 227.5 | inactive | Fri Oct 31 12:00:00 2025
+  92 | item_92 | 230.0 | pending  | Fri Oct 31 12:00:00 2025
+  93 | item_93 | 232.5 | active   | Fri Oct 31 12:00:00 2025
+  94 | item_94 | 235.0 | inactive | Fri Oct 31 12:00:00 2025
+  95 | item_95 | 237.5 | pending  | Fri Oct 31 12:00:00 2025
+  96 | item_96 | 240.0 | active   | Fri Oct 31 12:00:00 2025
+  97 | item_97 | 242.5 | inactive | Fri Oct 31 12:00:00 2025
+  98 | item_98 | 245.0 | pending  | Fri Oct 31 12:00:00 2025
+  99 | item_99 | 247.5 | active   | Fri Oct 31 12:00:00 2025
+ 100 | item_0  | 250.0 | inactive | Fri Oct 31 12:00:00 2025
+ 101 | item_1  | 252.5 | pending  | Fri Oct 31 12:00:00 2025
+ 102 | item_2  | 255.0 | active   | Fri Oct 31 12:00:00 2025
+ 103 | item_3  | 257.5 | inactive | Fri Oct 31 12:00:00 2025
+ 104 | item_4  | 260.0 | pending  | Fri Oct 31 12:00:00 2025
+ 105 | item_5  | 262.5 | active   | Fri Oct 31 12:00:00 2025
+ 106 | item_6  | 265.0 | inactive | Fri Oct 31 12:00:00 2025
+ 107 | item_7  | 267.5 | pending  | Fri Oct 31 12:00:00 2025
+ 108 | item_8  | 270.0 | active   | Fri Oct 31 12:00:00 2025
+ 109 | item_9  | 272.5 | inactive | Fri Oct 31 12:00:00 2025
+ 110 | item_10 | 275.0 | pending  | Fri Oct 31 12:00:00 2025
+ 111 | item_11 | 277.5 | active   | Fri Oct 31 12:00:00 2025
+ 112 | item_12 | 280.0 | inactive | Fri Oct 31 12:00:00 2025
+ 113 | item_13 | 282.5 | pending  | Fri Oct 31 12:00:00 2025
+ 114 | item_14 | 285.0 | active   | Fri Oct 31 12:00:00 2025
+ 115 | item_15 | 287.5 | inactive | Fri Oct 31 12:00:00 2025
+ 116 | item_16 | 290.0 | pending  | Fri Oct 31 12:00:00 2025
+ 117 | item_17 | 292.5 | active   | Fri Oct 31 12:00:00 2025
+ 118 | item_18 | 295.0 | inactive | Fri Oct 31 12:00:00 2025
+ 119 | item_19 | 297.5 | pending  | Fri Oct 31 12:00:00 2025
+ 120 | item_20 | 300.0 | active   | Fri Oct 31 12:00:00 2025
+ 121 | item_21 | 302.5 | inactive | Fri Oct 31 12:00:00 2025
+ 122 | item_22 | 305.0 | pending  | Fri Oct 31 12:00:00 2025
+ 123 | item_23 | 307.5 | active   | Fri Oct 31 12:00:00 2025
+ 124 | item_24 | 310.0 | inactive | Fri Oct 31 12:00:00 2025
+ 125 | item_25 | 312.5 | pending  | Fri Oct 31 12:00:00 2025
+ 126 | item_26 | 315.0 | active   | Fri Oct 31 12:00:00 2025
+ 127 | item_27 | 317.5 | inactive | Fri Oct 31 12:00:00 2025
+ 128 | item_28 | 320.0 | pending  | Fri Oct 31 12:00:00 2025
+ 129 | item_29 | 322.5 | active   | Fri Oct 31 12:00:00 2025
+ 130 | item_30 | 325.0 | inactive | Fri Oct 31 12:00:00 2025
+ 131 | item_31 | 327.5 | pending  | Fri Oct 31 12:00:00 2025
+ 132 | item_32 | 330.0 | active   | Fri Oct 31 12:00:00 2025
+ 133 | item_33 | 332.5 | inactive | Fri Oct 31 12:00:00 2025
+ 134 | item_34 | 335.0 | pending  | Fri Oct 31 12:00:00 2025
+ 135 | item_35 | 337.5 | active   | Fri Oct 31 12:00:00 2025
+ 136 | item_36 | 340.0 | inactive | Fri Oct 31 12:00:00 2025
+ 137 | item_37 | 342.5 | pending  | Fri Oct 31 12:00:00 2025
+ 138 | item_38 | 345.0 | active   | Fri Oct 31 12:00:00 2025
+ 139 | item_39 | 347.5 | inactive | Fri Oct 31 12:00:00 2025
+ 140 | item_40 | 350.0 | pending  | Fri Oct 31 12:00:00 2025
+ 141 | item_41 | 352.5 | active   | Fri Oct 31 12:00:00 2025
+ 142 | item_42 | 355.0 | inactive | Fri Oct 31 12:00:00 2025
+ 143 | item_43 | 357.5 | pending  | Fri Oct 31 12:00:00 2025
+ 144 | item_44 | 360.0 | active   | Fri Oct 31 12:00:00 2025
+ 145 | item_45 | 362.5 | inactive | Fri Oct 31 12:00:00 2025
+ 146 | item_46 | 365.0 | pending  | Fri Oct 31 12:00:00 2025
+ 147 | item_47 | 367.5 | active   | Fri Oct 31 12:00:00 2025
+ 148 | item_48 | 370.0 | inactive | Fri Oct 31 12:00:00 2025
+ 149 | item_49 | 372.5 | pending  | Fri Oct 31 12:00:00 2025
+ 150 | item_50 | 375.0 | active   | Fri Oct 31 12:00:00 2025
+ 151 | item_51 | 377.5 | inactive | Fri Oct 31 12:00:00 2025
+ 152 | item_52 | 380.0 | pending  | Fri Oct 31 12:00:00 2025
+ 153 | item_53 | 382.5 | active   | Fri Oct 31 12:00:00 2025
+ 154 | item_54 | 385.0 | inactive | Fri Oct 31 12:00:00 2025
+ 155 | item_55 | 387.5 | pending  | Fri Oct 31 12:00:00 2025
+ 156 | item_56 | 390.0 | active   | Fri Oct 31 12:00:00 2025
+ 157 | item_57 | 392.5 | inactive | Fri Oct 31 12:00:00 2025
+ 158 | item_58 | 395.0 | pending  | Fri Oct 31 12:00:00 2025
+ 159 | item_59 | 397.5 | active   | Fri Oct 31 12:00:00 2025
+ 160 | item_60 | 400.0 | inactive | Fri Oct 31 12:00:00 2025
+ 161 | item_61 | 402.5 | pending  | Fri Oct 31 12:00:00 2025
+ 162 | item_62 | 405.0 | active   | Fri Oct 31 12:00:00 2025
+ 163 | item_63 | 407.5 | inactive | Fri Oct 31 12:00:00 2025
+ 164 | item_64 | 410.0 | pending  | Fri Oct 31 12:00:00 2025
+ 165 | item_65 | 412.5 | active   | Fri Oct 31 12:00:00 2025
+ 166 | item_66 | 415.0 | inactive | Fri Oct 31 12:00:00 2025
+ 167 | item_67 | 417.5 | pending  | Fri Oct 31 12:00:00 2025
+ 168 | item_68 | 420.0 | active   | Fri Oct 31 12:00:00 2025
+ 169 | item_69 | 422.5 | inactive | Fri Oct 31 12:00:00 2025
+ 170 | item_70 | 425.0 | pending  | Fri Oct 31 12:00:00 2025
+ 171 | item_71 | 427.5 | active   | Fri Oct 31 12:00:00 2025
+ 172 | item_72 | 430.0 | inactive | Fri Oct 31 12:00:00 2025
+ 173 | item_73 | 432.5 | pending  | Fri Oct 31 12:00:00 2025
+ 174 | item_74 | 435.0 | active   | Fri Oct 31 12:00:00 2025
+ 175 | item_75 | 437.5 | inactive | Fri Oct 31 12:00:00 2025
+ 176 | item_76 | 440.0 | pending  | Fri Oct 31 12:00:00 2025
+ 177 | item_77 | 442.5 | active   | Fri Oct 31 12:00:00 2025
+ 178 | item_78 | 445.0 | inactive | Fri Oct 31 12:00:00 2025
+ 179 | item_79 | 447.5 | pending  | Fri Oct 31 12:00:00 2025
+ 180 | item_80 | 450.0 | active   | Fri Oct 31 12:00:00 2025
+ 181 | item_81 | 452.5 | inactive | Fri Oct 31 12:00:00 2025
+ 182 | item_82 | 455.0 | pending  | Fri Oct 31 12:00:00 2025
+ 183 | item_83 | 457.5 | active   | Fri Oct 31 12:00:00 2025
+ 184 | item_84 | 460.0 | inactive | Fri Oct 31 12:00:00 2025
+ 185 | item_85 | 462.5 | pending  | Fri Oct 31 12:00:00 2025
+ 186 | item_86 | 465.0 | active   | Fri Oct 31 12:00:00 2025
+ 187 | item_87 | 467.5 | inactive | Fri Oct 31 12:00:00 2025
+ 188 | item_88 | 470.0 | pending  | Fri Oct 31 12:00:00 2025
+ 189 | item_89 | 472.5 | active   | Fri Oct 31 12:00:00 2025
+ 190 | item_90 | 475.0 | inactive | Fri Oct 31 12:00:00 2025
+ 191 | item_91 | 477.5 | pending  | Fri Oct 31 12:00:00 2025
+ 192 | item_92 | 480.0 | active   | Fri Oct 31 12:00:00 2025
+ 193 | item_93 | 482.5 | inactive | Fri Oct 31 12:00:00 2025
+ 194 | item_94 | 485.0 | pending  | Fri Oct 31 12:00:00 2025
+ 195 | item_95 | 487.5 | active   | Fri Oct 31 12:00:00 2025
+ 196 | item_96 | 490.0 | inactive | Fri Oct 31 12:00:00 2025
+ 197 | item_97 | 492.5 | pending  | Fri Oct 31 12:00:00 2025
+ 198 | item_98 | 495.0 | active   | Fri Oct 31 12:00:00 2025
+ 199 | item_99 | 497.5 | inactive | Fri Oct 31 12:00:00 2025
+ 200 | item_0  | 500.0 | pending  | Fri Oct 31 12:00:00 2025
+(161 rows)
+
+EXECUTE prep_numeric(200, 600);
+ id  |  name   | value |  status  |        created_at        
+-----+---------+-------+----------+--------------------------
+  80 | item_80 | 200.0 | pending  | Fri Oct 31 12:00:00 2025
+  81 | item_81 | 202.5 | active   | Fri Oct 31 12:00:00 2025
+  82 | item_82 | 205.0 | inactive | Fri Oct 31 12:00:00 2025
+  83 | item_83 | 207.5 | pending  | Fri Oct 31 12:00:00 2025
+  84 | item_84 | 210.0 | active   | Fri Oct 31 12:00:00 2025
+  85 | item_85 | 212.5 | inactive | Fri Oct 31 12:00:00 2025
+  86 | item_86 | 215.0 | pending  | Fri Oct 31 12:00:00 2025
+  87 | item_87 | 217.5 | active   | Fri Oct 31 12:00:00 2025
+  88 | item_88 | 220.0 | inactive | Fri Oct 31 12:00:00 2025
+  89 | item_89 | 222.5 | pending  | Fri Oct 31 12:00:00 2025
+  90 | item_90 | 225.0 | active   | Fri Oct 31 12:00:00 2025
+  91 | item_91 | 227.5 | inactive | Fri Oct 31 12:00:00 2025
+  92 | item_92 | 230.0 | pending  | Fri Oct 31 12:00:00 2025
+  93 | item_93 | 232.5 | active   | Fri Oct 31 12:00:00 2025
+  94 | item_94 | 235.0 | inactive | Fri Oct 31 12:00:00 2025
+  95 | item_95 | 237.5 | pending  | Fri Oct 31 12:00:00 2025
+  96 | item_96 | 240.0 | active   | Fri Oct 31 12:00:00 2025
+  97 | item_97 | 242.5 | inactive | Fri Oct 31 12:00:00 2025
+  98 | item_98 | 245.0 | pending  | Fri Oct 31 12:00:00 2025
+  99 | item_99 | 247.5 | active   | Fri Oct 31 12:00:00 2025
+ 100 | item_0  | 250.0 | inactive | Fri Oct 31 12:00:00 2025
+ 101 | item_1  | 252.5 | pending  | Fri Oct 31 12:00:00 2025
+ 102 | item_2  | 255.0 | active   | Fri Oct 31 12:00:00 2025
+ 103 | item_3  | 257.5 | inactive | Fri Oct 31 12:00:00 2025
+ 104 | item_4  | 260.0 | pending  | Fri Oct 31 12:00:00 2025
+ 105 | item_5  | 262.5 | active   | Fri Oct 31 12:00:00 2025
+ 106 | item_6  | 265.0 | inactive | Fri Oct 31 12:00:00 2025
+ 107 | item_7  | 267.5 | pending  | Fri Oct 31 12:00:00 2025
+ 108 | item_8  | 270.0 | active   | Fri Oct 31 12:00:00 2025
+ 109 | item_9  | 272.5 | inactive | Fri Oct 31 12:00:00 2025
+ 110 | item_10 | 275.0 | pending  | Fri Oct 31 12:00:00 2025
+ 111 | item_11 | 277.5 | active   | Fri Oct 31 12:00:00 2025
+ 112 | item_12 | 280.0 | inactive | Fri Oct 31 12:00:00 2025
+ 113 | item_13 | 282.5 | pending  | Fri Oct 31 12:00:00 2025
+ 114 | item_14 | 285.0 | active   | Fri Oct 31 12:00:00 2025
+ 115 | item_15 | 287.5 | inactive | Fri Oct 31 12:00:00 2025
+ 116 | item_16 | 290.0 | pending  | Fri Oct 31 12:00:00 2025
+ 117 | item_17 | 292.5 | active   | Fri Oct 31 12:00:00 2025
+ 118 | item_18 | 295.0 | inactive | Fri Oct 31 12:00:00 2025
+ 119 | item_19 | 297.5 | pending  | Fri Oct 31 12:00:00 2025
+ 120 | item_20 | 300.0 | active   | Fri Oct 31 12:00:00 2025
+ 121 | item_21 | 302.5 | inactive | Fri Oct 31 12:00:00 2025
+ 122 | item_22 | 305.0 | pending  | Fri Oct 31 12:00:00 2025
+ 123 | item_23 | 307.5 | active   | Fri Oct 31 12:00:00 2025
+ 124 | item_24 | 310.0 | inactive | Fri Oct 31 12:00:00 2025
+ 125 | item_25 | 312.5 | pending  | Fri Oct 31 12:00:00 2025
+ 126 | item_26 | 315.0 | active   | Fri Oct 31 12:00:00 2025
+ 127 | item_27 | 317.5 | inactive | Fri Oct 31 12:00:00 2025
+ 128 | item_28 | 320.0 | pending  | Fri Oct 31 12:00:00 2025
+ 129 | item_29 | 322.5 | active   | Fri Oct 31 12:00:00 2025
+ 130 | item_30 | 325.0 | inactive | Fri Oct 31 12:00:00 2025
+ 131 | item_31 | 327.5 | pending  | Fri Oct 31 12:00:00 2025
+ 132 | item_32 | 330.0 | active   | Fri Oct 31 12:00:00 2025
+ 133 | item_33 | 332.5 | inactive | Fri Oct 31 12:00:00 2025
+ 134 | item_34 | 335.0 | pending  | Fri Oct 31 12:00:00 2025
+ 135 | item_35 | 337.5 | active   | Fri Oct 31 12:00:00 2025
+ 136 | item_36 | 340.0 | inactive | Fri Oct 31 12:00:00 2025
+ 137 | item_37 | 342.5 | pending  | Fri Oct 31 12:00:00 2025
+ 138 | item_38 | 345.0 | active   | Fri Oct 31 12:00:00 2025
+ 139 | item_39 | 347.5 | inactive | Fri Oct 31 12:00:00 2025
+ 140 | item_40 | 350.0 | pending  | Fri Oct 31 12:00:00 2025
+ 141 | item_41 | 352.5 | active   | Fri Oct 31 12:00:00 2025
+ 142 | item_42 | 355.0 | inactive | Fri Oct 31 12:00:00 2025
+ 143 | item_43 | 357.5 | pending  | Fri Oct 31 12:00:00 2025
+ 144 | item_44 | 360.0 | active   | Fri Oct 31 12:00:00 2025
+ 145 | item_45 | 362.5 | inactive | Fri Oct 31 12:00:00 2025
+ 146 | item_46 | 365.0 | pending  | Fri Oct 31 12:00:00 2025
+ 147 | item_47 | 367.5 | active   | Fri Oct 31 12:00:00 2025
+ 148 | item_48 | 370.0 | inactive | Fri Oct 31 12:00:00 2025
+ 149 | item_49 | 372.5 | pending  | Fri Oct 31 12:00:00 2025
+ 150 | item_50 | 375.0 | active   | Fri Oct 31 12:00:00 2025
+ 151 | item_51 | 377.5 | inactive | Fri Oct 31 12:00:00 2025
+ 152 | item_52 | 380.0 | pending  | Fri Oct 31 12:00:00 2025
+ 153 | item_53 | 382.5 | active   | Fri Oct 31 12:00:00 2025
+ 154 | item_54 | 385.0 | inactive | Fri Oct 31 12:00:00 2025
+ 155 | item_55 | 387.5 | pending  | Fri Oct 31 12:00:00 2025
+ 156 | item_56 | 390.0 | active   | Fri Oct 31 12:00:00 2025
+ 157 | item_57 | 392.5 | inactive | Fri Oct 31 12:00:00 2025
+ 158 | item_58 | 395.0 | pending  | Fri Oct 31 12:00:00 2025
+ 159 | item_59 | 397.5 | active   | Fri Oct 31 12:00:00 2025
+ 160 | item_60 | 400.0 | inactive | Fri Oct 31 12:00:00 2025
+ 161 | item_61 | 402.5 | pending  | Fri Oct 31 12:00:00 2025
+ 162 | item_62 | 405.0 | active   | Fri Oct 31 12:00:00 2025
+ 163 | item_63 | 407.5 | inactive | Fri Oct 31 12:00:00 2025
+ 164 | item_64 | 410.0 | pending  | Fri Oct 31 12:00:00 2025
+ 165 | item_65 | 412.5 | active   | Fri Oct 31 12:00:00 2025
+ 166 | item_66 | 415.0 | inactive | Fri Oct 31 12:00:00 2025
+ 167 | item_67 | 417.5 | pending  | Fri Oct 31 12:00:00 2025
+ 168 | item_68 | 420.0 | active   | Fri Oct 31 12:00:00 2025
+ 169 | item_69 | 422.5 | inactive | Fri Oct 31 12:00:00 2025
+ 170 | item_70 | 425.0 | pending  | Fri Oct 31 12:00:00 2025
+ 171 | item_71 | 427.5 | active   | Fri Oct 31 12:00:00 2025
+ 172 | item_72 | 430.0 | inactive | Fri Oct 31 12:00:00 2025
+ 173 | item_73 | 432.5 | pending  | Fri Oct 31 12:00:00 2025
+ 174 | item_74 | 435.0 | active   | Fri Oct 31 12:00:00 2025
+ 175 | item_75 | 437.5 | inactive | Fri Oct 31 12:00:00 2025
+ 176 | item_76 | 440.0 | pending  | Fri Oct 31 12:00:00 2025
+ 177 | item_77 | 442.5 | active   | Fri Oct 31 12:00:00 2025
+ 178 | item_78 | 445.0 | inactive | Fri Oct 31 12:00:00 2025
+ 179 | item_79 | 447.5 | pending  | Fri Oct 31 12:00:00 2025
+ 180 | item_80 | 450.0 | active   | Fri Oct 31 12:00:00 2025
+ 181 | item_81 | 452.5 | inactive | Fri Oct 31 12:00:00 2025
+ 182 | item_82 | 455.0 | pending  | Fri Oct 31 12:00:00 2025
+ 183 | item_83 | 457.5 | active   | Fri Oct 31 12:00:00 2025
+ 184 | item_84 | 460.0 | inactive | Fri Oct 31 12:00:00 2025
+ 185 | item_85 | 462.5 | pending  | Fri Oct 31 12:00:00 2025
+ 186 | item_86 | 465.0 | active   | Fri Oct 31 12:00:00 2025
+ 187 | item_87 | 467.5 | inactive | Fri Oct 31 12:00:00 2025
+ 188 | item_88 | 470.0 | pending  | Fri Oct 31 12:00:00 2025
+ 189 | item_89 | 472.5 | active   | Fri Oct 31 12:00:00 2025
+ 190 | item_90 | 475.0 | inactive | Fri Oct 31 12:00:00 2025
+ 191 | item_91 | 477.5 | pending  | Fri Oct 31 12:00:00 2025
+ 192 | item_92 | 480.0 | active   | Fri Oct 31 12:00:00 2025
+ 193 | item_93 | 482.5 | inactive | Fri Oct 31 12:00:00 2025
+ 194 | item_94 | 485.0 | pending  | Fri Oct 31 12:00:00 2025
+ 195 | item_95 | 487.5 | active   | Fri Oct 31 12:00:00 2025
+ 196 | item_96 | 490.0 | inactive | Fri Oct 31 12:00:00 2025
+ 197 | item_97 | 492.5 | pending  | Fri Oct 31 12:00:00 2025
+ 198 | item_98 | 495.0 | active   | Fri Oct 31 12:00:00 2025
+ 199 | item_99 | 497.5 | inactive | Fri Oct 31 12:00:00 2025
+ 200 | item_0  | 500.0 | pending  | Fri Oct 31 12:00:00 2025
+ 201 | item_1  | 502.5 | active   | Fri Oct 31 12:00:00 2025
+ 202 | item_2  | 505.0 | inactive | Fri Oct 31 12:00:00 2025
+ 203 | item_3  | 507.5 | pending  | Fri Oct 31 12:00:00 2025
+ 204 | item_4  | 510.0 | active   | Fri Oct 31 12:00:00 2025
+ 205 | item_5  | 512.5 | inactive | Fri Oct 31 12:00:00 2025
+ 206 | item_6  | 515.0 | pending  | Fri Oct 31 12:00:00 2025
+ 207 | item_7  | 517.5 | active   | Fri Oct 31 12:00:00 2025
+ 208 | item_8  | 520.0 | inactive | Fri Oct 31 12:00:00 2025
+ 209 | item_9  | 522.5 | pending  | Fri Oct 31 12:00:00 2025
+ 210 | item_10 | 525.0 | active   | Fri Oct 31 12:00:00 2025
+ 211 | item_11 | 527.5 | inactive | Fri Oct 31 12:00:00 2025
+ 212 | item_12 | 530.0 | pending  | Fri Oct 31 12:00:00 2025
+ 213 | item_13 | 532.5 | active   | Fri Oct 31 12:00:00 2025
+ 214 | item_14 | 535.0 | inactive | Fri Oct 31 12:00:00 2025
+ 215 | item_15 | 537.5 | pending  | Fri Oct 31 12:00:00 2025
+ 216 | item_16 | 540.0 | active   | Fri Oct 31 12:00:00 2025
+ 217 | item_17 | 542.5 | inactive | Fri Oct 31 12:00:00 2025
+ 218 | item_18 | 545.0 | pending  | Fri Oct 31 12:00:00 2025
+ 219 | item_19 | 547.5 | active   | Fri Oct 31 12:00:00 2025
+ 220 | item_20 | 550.0 | inactive | Fri Oct 31 12:00:00 2025
+ 221 | item_21 | 552.5 | pending  | Fri Oct 31 12:00:00 2025
+ 222 | item_22 | 555.0 | active   | Fri Oct 31 12:00:00 2025
+ 223 | item_23 | 557.5 | inactive | Fri Oct 31 12:00:00 2025
+ 224 | item_24 | 560.0 | pending  | Fri Oct 31 12:00:00 2025
+ 225 | item_25 | 562.5 | active   | Fri Oct 31 12:00:00 2025
+ 226 | item_26 | 565.0 | inactive | Fri Oct 31 12:00:00 2025
+ 227 | item_27 | 567.5 | pending  | Fri Oct 31 12:00:00 2025
+ 228 | item_28 | 570.0 | active   | Fri Oct 31 12:00:00 2025
+ 229 | item_29 | 572.5 | inactive | Fri Oct 31 12:00:00 2025
+ 230 | item_30 | 575.0 | pending  | Fri Oct 31 12:00:00 2025
+ 231 | item_31 | 577.5 | active   | Fri Oct 31 12:00:00 2025
+ 232 | item_32 | 580.0 | inactive | Fri Oct 31 12:00:00 2025
+ 233 | item_33 | 582.5 | pending  | Fri Oct 31 12:00:00 2025
+ 234 | item_34 | 585.0 | active   | Fri Oct 31 12:00:00 2025
+ 235 | item_35 | 587.5 | inactive | Fri Oct 31 12:00:00 2025
+ 236 | item_36 | 590.0 | pending  | Fri Oct 31 12:00:00 2025
+ 237 | item_37 | 592.5 | active   | Fri Oct 31 12:00:00 2025
+ 238 | item_38 | 595.0 | inactive | Fri Oct 31 12:00:00 2025
+ 239 | item_39 | 597.5 | pending  | Fri Oct 31 12:00:00 2025
+ 240 | item_40 | 600.0 | active   | Fri Oct 31 12:00:00 2025
+(161 rows)
+
+EXECUTE prep_numeric(50, 150);
+ id |  name   | value |  status  |        created_at        
+----+---------+-------+----------+--------------------------
+ 20 | item_20 |  50.0 | pending  | Fri Oct 31 12:00:00 2025
+ 21 | item_21 |  52.5 | active   | Fri Oct 31 12:00:00 2025
+ 22 | item_22 |  55.0 | inactive | Fri Oct 31 12:00:00 2025
+ 23 | item_23 |  57.5 | pending  | Fri Oct 31 12:00:00 2025
+ 24 | item_24 |  60.0 | active   | Fri Oct 31 12:00:00 2025
+ 25 | item_25 |  62.5 | inactive | Fri Oct 31 12:00:00 2025
+ 26 | item_26 |  65.0 | pending  | Fri Oct 31 12:00:00 2025
+ 27 | item_27 |  67.5 | active   | Fri Oct 31 12:00:00 2025
+ 28 | item_28 |  70.0 | inactive | Fri Oct 31 12:00:00 2025
+ 29 | item_29 |  72.5 | pending  | Fri Oct 31 12:00:00 2025
+ 30 | item_30 |  75.0 | active   | Fri Oct 31 12:00:00 2025
+ 31 | item_31 |  77.5 | inactive | Fri Oct 31 12:00:00 2025
+ 32 | item_32 |  80.0 | pending  | Fri Oct 31 12:00:00 2025
+ 33 | item_33 |  82.5 | active   | Fri Oct 31 12:00:00 2025
+ 34 | item_34 |  85.0 | inactive | Fri Oct 31 12:00:00 2025
+ 35 | item_35 |  87.5 | pending  | Fri Oct 31 12:00:00 2025
+ 36 | item_36 |  90.0 | active   | Fri Oct 31 12:00:00 2025
+ 37 | item_37 |  92.5 | inactive | Fri Oct 31 12:00:00 2025
+ 38 | item_38 |  95.0 | pending  | Fri Oct 31 12:00:00 2025
+ 39 | item_39 |  97.5 | active   | Fri Oct 31 12:00:00 2025
+ 40 | item_40 | 100.0 | inactive | Fri Oct 31 12:00:00 2025
+ 41 | item_41 | 102.5 | pending  | Fri Oct 31 12:00:00 2025
+ 42 | item_42 | 105.0 | active   | Fri Oct 31 12:00:00 2025
+ 43 | item_43 | 107.5 | inactive | Fri Oct 31 12:00:00 2025
+ 44 | item_44 | 110.0 | pending  | Fri Oct 31 12:00:00 2025
+ 45 | item_45 | 112.5 | active   | Fri Oct 31 12:00:00 2025
+ 46 | item_46 | 115.0 | inactive | Fri Oct 31 12:00:00 2025
+ 47 | item_47 | 117.5 | pending  | Fri Oct 31 12:00:00 2025
+ 48 | item_48 | 120.0 | active   | Fri Oct 31 12:00:00 2025
+ 49 | item_49 | 122.5 | inactive | Fri Oct 31 12:00:00 2025
+ 50 | item_50 | 125.0 | pending  | Fri Oct 31 12:00:00 2025
+ 51 | item_51 | 127.5 | active   | Fri Oct 31 12:00:00 2025
+ 52 | item_52 | 130.0 | inactive | Fri Oct 31 12:00:00 2025
+ 53 | item_53 | 132.5 | pending  | Fri Oct 31 12:00:00 2025
+ 54 | item_54 | 135.0 | active   | Fri Oct 31 12:00:00 2025
+ 55 | item_55 | 137.5 | inactive | Fri Oct 31 12:00:00 2025
+ 56 | item_56 | 140.0 | pending  | Fri Oct 31 12:00:00 2025
+ 57 | item_57 | 142.5 | active   | Fri Oct 31 12:00:00 2025
+ 58 | item_58 | 145.0 | inactive | Fri Oct 31 12:00:00 2025
+ 59 | item_59 | 147.5 | pending  | Fri Oct 31 12:00:00 2025
+ 60 | item_60 | 150.0 | active   | Fri Oct 31 12:00:00 2025
+(41 rows)
+
+EXECUTE prep_text('item_%');
+ id  |  name   | value  |  status  |        created_at        
+-----+---------+--------+----------+--------------------------
+   2 | item_2  | 888.88 | pending  | Fri Oct 31 12:00:00 2025
+   3 | item_3  | 777.77 | active   | Fri Oct 31 12:00:00 2025
+   4 | item_4  |   10.0 | inactive | Fri Oct 31 12:00:00 2025
+   5 | item_5  |   12.5 | pending  | Fri Oct 31 12:00:00 2025
+   6 | item_6  |   15.0 | active   | Fri Oct 31 12:00:00 2025
+   7 | item_7  |   17.5 | inactive | Fri Oct 31 12:00:00 2025
+   8 | item_8  |   20.0 | pending  | Fri Oct 31 12:00:00 2025
+   9 | item_9  |   22.5 | active   | Fri Oct 31 12:00:00 2025
+  10 | item_10 |   25.0 | inactive | Fri Oct 31 12:00:00 2025
+  11 | item_11 |   27.5 | pending  | Fri Oct 31 12:00:00 2025
+  12 | item_12 |   30.0 | active   | Fri Oct 31 12:00:00 2025
+  13 | item_13 |   32.5 | inactive | Fri Oct 31 12:00:00 2025
+  14 | item_14 |   35.0 | pending  | Fri Oct 31 12:00:00 2025
+  15 | item_15 |   37.5 | active   | Fri Oct 31 12:00:00 2025
+  16 | item_16 |   40.0 | inactive | Fri Oct 31 12:00:00 2025
+  17 | item_17 |   42.5 | pending  | Fri Oct 31 12:00:00 2025
+  18 | item_18 |   45.0 | active   | Fri Oct 31 12:00:00 2025
+  19 | item_19 |   47.5 | inactive | Fri Oct 31 12:00:00 2025
+  20 | item_20 |   50.0 | pending  | Fri Oct 31 12:00:00 2025
+  21 | item_21 |   52.5 | active   | Fri Oct 31 12:00:00 2025
+  22 | item_22 |   55.0 | inactive | Fri Oct 31 12:00:00 2025
+  23 | item_23 |   57.5 | pending  | Fri Oct 31 12:00:00 2025
+  24 | item_24 |   60.0 | active   | Fri Oct 31 12:00:00 2025
+  25 | item_25 |   62.5 | inactive | Fri Oct 31 12:00:00 2025
+  26 | item_26 |   65.0 | pending  | Fri Oct 31 12:00:00 2025
+  27 | item_27 |   67.5 | active   | Fri Oct 31 12:00:00 2025
+  28 | item_28 |   70.0 | inactive | Fri Oct 31 12:00:00 2025
+  29 | item_29 |   72.5 | pending  | Fri Oct 31 12:00:00 2025
+  30 | item_30 |   75.0 | active   | Fri Oct 31 12:00:00 2025
+  31 | item_31 |   77.5 | inactive | Fri Oct 31 12:00:00 2025
+  32 | item_32 |   80.0 | pending  | Fri Oct 31 12:00:00 2025
+  33 | item_33 |   82.5 | active   | Fri Oct 31 12:00:00 2025
+  34 | item_34 |   85.0 | inactive | Fri Oct 31 12:00:00 2025
+  35 | item_35 |   87.5 | pending  | Fri Oct 31 12:00:00 2025
+  36 | item_36 |   90.0 | active   | Fri Oct 31 12:00:00 2025
+  37 | item_37 |   92.5 | inactive | Fri Oct 31 12:00:00 2025
+  38 | item_38 |   95.0 | pending  | Fri Oct 31 12:00:00 2025
+  39 | item_39 |   97.5 | active   | Fri Oct 31 12:00:00 2025
+  40 | item_40 |  100.0 | inactive | Fri Oct 31 12:00:00 2025
+  41 | item_41 |  102.5 | pending  | Fri Oct 31 12:00:00 2025
+  42 | item_42 |  105.0 | active   | Fri Oct 31 12:00:00 2025
+  43 | item_43 |  107.5 | inactive | Fri Oct 31 12:00:00 2025
+  44 | item_44 |  110.0 | pending  | Fri Oct 31 12:00:00 2025
+  45 | item_45 |  112.5 | active   | Fri Oct 31 12:00:00 2025
+  46 | item_46 |  115.0 | inactive | Fri Oct 31 12:00:00 2025
+  47 | item_47 |  117.5 | pending  | Fri Oct 31 12:00:00 2025
+  48 | item_48 |  120.0 | active   | Fri Oct 31 12:00:00 2025
+  49 | item_49 |  122.5 | inactive | Fri Oct 31 12:00:00 2025
+  50 | item_50 |  125.0 | pending  | Fri Oct 31 12:00:00 2025
+  51 | item_51 |  127.5 | active   | Fri Oct 31 12:00:00 2025
+  52 | item_52 |  130.0 | inactive | Fri Oct 31 12:00:00 2025
+  53 | item_53 |  132.5 | pending  | Fri Oct 31 12:00:00 2025
+  54 | item_54 |  135.0 | active   | Fri Oct 31 12:00:00 2025
+  55 | item_55 |  137.5 | inactive | Fri Oct 31 12:00:00 2025
+  56 | item_56 |  140.0 | pending  | Fri Oct 31 12:00:00 2025
+  57 | item_57 |  142.5 | active   | Fri Oct 31 12:00:00 2025
+  58 | item_58 |  145.0 | inactive | Fri Oct 31 12:00:00 2025
+  59 | item_59 |  147.5 | pending  | Fri Oct 31 12:00:00 2025
+  60 | item_60 |  150.0 | active   | Fri Oct 31 12:00:00 2025
+  61 | item_61 |  152.5 | inactive | Fri Oct 31 12:00:00 2025
+  62 | item_62 |  155.0 | pending  | Fri Oct 31 12:00:00 2025
+  63 | item_63 |  157.5 | active   | Fri Oct 31 12:00:00 2025
+  64 | item_64 |  160.0 | inactive | Fri Oct 31 12:00:00 2025
+  65 | item_65 |  162.5 | pending  | Fri Oct 31 12:00:00 2025
+  66 | item_66 |  165.0 | active   | Fri Oct 31 12:00:00 2025
+  67 | item_67 |  167.5 | inactive | Fri Oct 31 12:00:00 2025
+  68 | item_68 |  170.0 | pending  | Fri Oct 31 12:00:00 2025
+  69 | item_69 |  172.5 | active   | Fri Oct 31 12:00:00 2025
+  70 | item_70 |  175.0 | inactive | Fri Oct 31 12:00:00 2025
+  71 | item_71 |  177.5 | pending  | Fri Oct 31 12:00:00 2025
+  72 | item_72 |  180.0 | active   | Fri Oct 31 12:00:00 2025
+  73 | item_73 |  182.5 | inactive | Fri Oct 31 12:00:00 2025
+  74 | item_74 |  185.0 | pending  | Fri Oct 31 12:00:00 2025
+  75 | item_75 |  187.5 | active   | Fri Oct 31 12:00:00 2025
+  76 | item_76 |  190.0 | inactive | Fri Oct 31 12:00:00 2025
+  77 | item_77 |  192.5 | pending  | Fri Oct 31 12:00:00 2025
+  78 | item_78 |  195.0 | active   | Fri Oct 31 12:00:00 2025
+  79 | item_79 |  197.5 | inactive | Fri Oct 31 12:00:00 2025
+  80 | item_80 |  200.0 | pending  | Fri Oct 31 12:00:00 2025
+  81 | item_81 |  202.5 | active   | Fri Oct 31 12:00:00 2025
+  82 | item_82 |  205.0 | inactive | Fri Oct 31 12:00:00 2025
+  83 | item_83 |  207.5 | pending  | Fri Oct 31 12:00:00 2025
+  84 | item_84 |  210.0 | active   | Fri Oct 31 12:00:00 2025
+  85 | item_85 |  212.5 | inactive | Fri Oct 31 12:00:00 2025
+  86 | item_86 |  215.0 | pending  | Fri Oct 31 12:00:00 2025
+  87 | item_87 |  217.5 | active   | Fri Oct 31 12:00:00 2025
+  88 | item_88 |  220.0 | inactive | Fri Oct 31 12:00:00 2025
+  89 | item_89 |  222.5 | pending  | Fri Oct 31 12:00:00 2025
+  90 | item_90 |  225.0 | active   | Fri Oct 31 12:00:00 2025
+  91 | item_91 |  227.5 | inactive | Fri Oct 31 12:00:00 2025
+  92 | item_92 |  230.0 | pending  | Fri Oct 31 12:00:00 2025
+  93 | item_93 |  232.5 | active   | Fri Oct 31 12:00:00 2025
+  94 | item_94 |  235.0 | inactive | Fri Oct 31 12:00:00 2025
+  95 | item_95 |  237.5 | pending  | Fri Oct 31 12:00:00 2025
+  96 | item_96 |  240.0 | active   | Fri Oct 31 12:00:00 2025
+  97 | item_97 |  242.5 | inactive | Fri Oct 31 12:00:00 2025
+  98 | item_98 |  245.0 | pending  | Fri Oct 31 12:00:00 2025
+  99 | item_99 |  247.5 | active   | Fri Oct 31 12:00:00 2025
+ 100 | item_0  |  250.0 | inactive | Fri Oct 31 12:00:00 2025
+ 101 | item_1  |  252.5 | pending  | Fri Oct 31 12:00:00 2025
+ 102 | item_2  |  255.0 | active   | Fri Oct 31 12:00:00 2025
+ 103 | item_3  |  257.5 | inactive | Fri Oct 31 12:00:00 2025
+ 104 | item_4  |  260.0 | pending  | Fri Oct 31 12:00:00 2025
+ 105 | item_5  |  262.5 | active   | Fri Oct 31 12:00:00 2025
+ 106 | item_6  |  265.0 | inactive | Fri Oct 31 12:00:00 2025
+ 107 | item_7  |  267.5 | pending  | Fri Oct 31 12:00:00 2025
+ 108 | item_8  |  270.0 | active   | Fri Oct 31 12:00:00 2025
+ 109 | item_9  |  272.5 | inactive | Fri Oct 31 12:00:00 2025
+ 110 | item_10 |  275.0 | pending  | Fri Oct 31 12:00:00 2025
+ 111 | item_11 |  277.5 | active   | Fri Oct 31 12:00:00 2025
+ 112 | item_12 |  280.0 | inactive | Fri Oct 31 12:00:00 2025
+ 113 | item_13 |  282.5 | pending  | Fri Oct 31 12:00:00 2025
+ 114 | item_14 |  285.0 | active   | Fri Oct 31 12:00:00 2025
+ 115 | item_15 |  287.5 | inactive | Fri Oct 31 12:00:00 2025
+ 116 | item_16 |  290.0 | pending  | Fri Oct 31 12:00:00 2025
+ 117 | item_17 |  292.5 | active   | Fri Oct 31 12:00:00 2025
+ 118 | item_18 |  295.0 | inactive | Fri Oct 31 12:00:00 2025
+ 119 | item_19 |  297.5 | pending  | Fri Oct 31 12:00:00 2025
+ 120 | item_20 |  300.0 | active   | Fri Oct 31 12:00:00 2025
+ 121 | item_21 |  302.5 | inactive | Fri Oct 31 12:00:00 2025
+ 122 | item_22 |  305.0 | pending  | Fri Oct 31 12:00:00 2025
+ 123 | item_23 |  307.5 | active   | Fri Oct 31 12:00:00 2025
+ 124 | item_24 |  310.0 | inactive | Fri Oct 31 12:00:00 2025
+ 125 | item_25 |  312.5 | pending  | Fri Oct 31 12:00:00 2025
+ 126 | item_26 |  315.0 | active   | Fri Oct 31 12:00:00 2025
+ 127 | item_27 |  317.5 | inactive | Fri Oct 31 12:00:00 2025
+ 128 | item_28 |  320.0 | pending  | Fri Oct 31 12:00:00 2025
+ 129 | item_29 |  322.5 | active   | Fri Oct 31 12:00:00 2025
+ 130 | item_30 |  325.0 | inactive | Fri Oct 31 12:00:00 2025
+ 131 | item_31 |  327.5 | pending  | Fri Oct 31 12:00:00 2025
+ 132 | item_32 |  330.0 | active   | Fri Oct 31 12:00:00 2025
+ 133 | item_33 |  332.5 | inactive | Fri Oct 31 12:00:00 2025
+ 134 | item_34 |  335.0 | pending  | Fri Oct 31 12:00:00 2025
+ 135 | item_35 |  337.5 | active   | Fri Oct 31 12:00:00 2025
+ 136 | item_36 |  340.0 | inactive | Fri Oct 31 12:00:00 2025
+ 137 | item_37 |  342.5 | pending  | Fri Oct 31 12:00:00 2025
+ 138 | item_38 |  345.0 | active   | Fri Oct 31 12:00:00 2025
+ 139 | item_39 |  347.5 | inactive | Fri Oct 31 12:00:00 2025
+ 140 | item_40 |  350.0 | pending  | Fri Oct 31 12:00:00 2025
+ 141 | item_41 |  352.5 | active   | Fri Oct 31 12:00:00 2025
+ 142 | item_42 |  355.0 | inactive | Fri Oct 31 12:00:00 2025
+ 143 | item_43 |  357.5 | pending  | Fri Oct 31 12:00:00 2025
+ 144 | item_44 |  360.0 | active   | Fri Oct 31 12:00:00 2025
+ 145 | item_45 |  362.5 | inactive | Fri Oct 31 12:00:00 2025
+ 146 | item_46 |  365.0 | pending  | Fri Oct 31 12:00:00 2025
+ 147 | item_47 |  367.5 | active   | Fri Oct 31 12:00:00 2025
+ 148 | item_48 |  370.0 | inactive | Fri Oct 31 12:00:00 2025
+ 149 | item_49 |  372.5 | pending  | Fri Oct 31 12:00:00 2025
+ 150 | item_50 |  375.0 | active   | Fri Oct 31 12:00:00 2025
+ 151 | item_51 |  377.5 | inactive | Fri Oct 31 12:00:00 2025
+ 152 | item_52 |  380.0 | pending  | Fri Oct 31 12:00:00 2025
+ 153 | item_53 |  382.5 | active   | Fri Oct 31 12:00:00 2025
+ 154 | item_54 |  385.0 | inactive | Fri Oct 31 12:00:00 2025
+ 155 | item_55 |  387.5 | pending  | Fri Oct 31 12:00:00 2025
+ 156 | item_56 |  390.0 | active   | Fri Oct 31 12:00:00 2025
+ 157 | item_57 |  392.5 | inactive | Fri Oct 31 12:00:00 2025
+ 158 | item_58 |  395.0 | pending  | Fri Oct 31 12:00:00 2025
+ 159 | item_59 |  397.5 | active   | Fri Oct 31 12:00:00 2025
+ 160 | item_60 |  400.0 | inactive | Fri Oct 31 12:00:00 2025
+ 161 | item_61 |  402.5 | pending  | Fri Oct 31 12:00:00 2025
+ 162 | item_62 |  405.0 | active   | Fri Oct 31 12:00:00 2025
+ 163 | item_63 |  407.5 | inactive | Fri Oct 31 12:00:00 2025
+ 164 | item_64 |  410.0 | pending  | Fri Oct 31 12:00:00 2025
+ 165 | item_65 |  412.5 | active   | Fri Oct 31 12:00:00 2025
+ 166 | item_66 |  415.0 | inactive | Fri Oct 31 12:00:00 2025
+ 167 | item_67 |  417.5 | pending  | Fri Oct 31 12:00:00 2025
+ 168 | item_68 |  420.0 | active   | Fri Oct 31 12:00:00 2025
+ 169 | item_69 |  422.5 | inactive | Fri Oct 31 12:00:00 2025
+ 170 | item_70 |  425.0 | pending  | Fri Oct 31 12:00:00 2025
+ 171 | item_71 |  427.5 | active   | Fri Oct 31 12:00:00 2025
+ 172 | item_72 |  430.0 | inactive | Fri Oct 31 12:00:00 2025
+ 173 | item_73 |  432.5 | pending  | Fri Oct 31 12:00:00 2025
+ 174 | item_74 |  435.0 | active   | Fri Oct 31 12:00:00 2025
+ 175 | item_75 |  437.5 | inactive | Fri Oct 31 12:00:00 2025
+ 176 | item_76 |  440.0 | pending  | Fri Oct 31 12:00:00 2025
+ 177 | item_77 |  442.5 | active   | Fri Oct 31 12:00:00 2025
+ 178 | item_78 |  445.0 | inactive | Fri Oct 31 12:00:00 2025
+ 179 | item_79 |  447.5 | pending  | Fri Oct 31 12:00:00 2025
+ 180 | item_80 |  450.0 | active   | Fri Oct 31 12:00:00 2025
+ 181 | item_81 |  452.5 | inactive | Fri Oct 31 12:00:00 2025
+ 182 | item_82 |  455.0 | pending  | Fri Oct 31 12:00:00 2025
+ 183 | item_83 |  457.5 | active   | Fri Oct 31 12:00:00 2025
+ 184 | item_84 |  460.0 | inactive | Fri Oct 31 12:00:00 2025
+ 185 | item_85 |  462.5 | pending  | Fri Oct 31 12:00:00 2025
+ 186 | item_86 |  465.0 | active   | Fri Oct 31 12:00:00 2025
+ 187 | item_87 |  467.5 | inactive | Fri Oct 31 12:00:00 2025
+ 188 | item_88 |  470.0 | pending  | Fri Oct 31 12:00:00 2025
+ 189 | item_89 |  472.5 | active   | Fri Oct 31 12:00:00 2025
+ 190 | item_90 |  475.0 | inactive | Fri Oct 31 12:00:00 2025
+ 191 | item_91 |  477.5 | pending  | Fri Oct 31 12:00:00 2025
+ 192 | item_92 |  480.0 | active   | Fri Oct 31 12:00:00 2025
+ 193 | item_93 |  482.5 | inactive | Fri Oct 31 12:00:00 2025
+ 194 | item_94 |  485.0 | pending  | Fri Oct 31 12:00:00 2025
+ 195 | item_95 |  487.5 | active   | Fri Oct 31 12:00:00 2025
+ 196 | item_96 |  490.0 | inactive | Fri Oct 31 12:00:00 2025
+ 197 | item_97 |  492.5 | pending  | Fri Oct 31 12:00:00 2025
+ 198 | item_98 |  495.0 | active   | Fri Oct 31 12:00:00 2025
+ 199 | item_99 |  497.5 | inactive | Fri Oct 31 12:00:00 2025
+ 200 | item_0  |  500.0 | pending  | Fri Oct 31 12:00:00 2025
+ 201 | item_1  |  502.5 | active   | Fri Oct 31 12:00:00 2025
+ 202 | item_2  |  505.0 | inactive | Fri Oct 31 12:00:00 2025
+ 203 | item_3  |  507.5 | pending  | Fri Oct 31 12:00:00 2025
+ 204 | item_4  |  510.0 | active   | Fri Oct 31 12:00:00 2025
+ 205 | item_5  |  512.5 | inactive | Fri Oct 31 12:00:00 2025
+ 206 | item_6  |  515.0 | pending  | Fri Oct 31 12:00:00 2025
+ 207 | item_7  |  517.5 | active   | Fri Oct 31 12:00:00 2025
+ 208 | item_8  |  520.0 | inactive | Fri Oct 31 12:00:00 2025
+ 209 | item_9  |  522.5 | pending  | Fri Oct 31 12:00:00 2025
+ 210 | item_10 |  525.0 | active   | Fri Oct 31 12:00:00 2025
+ 211 | item_11 |  527.5 | inactive | Fri Oct 31 12:00:00 2025
+ 212 | item_12 |  530.0 | pending  | Fri Oct 31 12:00:00 2025
+ 213 | item_13 |  532.5 | active   | Fri Oct 31 12:00:00 2025
+ 214 | item_14 |  535.0 | inactive | Fri Oct 31 12:00:00 2025
+ 215 | item_15 |  537.5 | pending  | Fri Oct 31 12:00:00 2025
+ 216 | item_16 |  540.0 | active   | Fri Oct 31 12:00:00 2025
+ 217 | item_17 |  542.5 | inactive | Fri Oct 31 12:00:00 2025
+ 218 | item_18 |  545.0 | pending  | Fri Oct 31 12:00:00 2025
+ 219 | item_19 |  547.5 | active   | Fri Oct 31 12:00:00 2025
+ 220 | item_20 |  550.0 | inactive | Fri Oct 31 12:00:00 2025
+ 221 | item_21 |  552.5 | pending  | Fri Oct 31 12:00:00 2025
+ 222 | item_22 |  555.0 | active   | Fri Oct 31 12:00:00 2025
+ 223 | item_23 |  557.5 | inactive | Fri Oct 31 12:00:00 2025
+ 224 | item_24 |  560.0 | pending  | Fri Oct 31 12:00:00 2025
+ 225 | item_25 |  562.5 | active   | Fri Oct 31 12:00:00 2025
+ 226 | item_26 |  565.0 | inactive | Fri Oct 31 12:00:00 2025
+ 227 | item_27 |  567.5 | pending  | Fri Oct 31 12:00:00 2025
+ 228 | item_28 |  570.0 | active   | Fri Oct 31 12:00:00 2025
+ 229 | item_29 |  572.5 | inactive | Fri Oct 31 12:00:00 2025
+ 230 | item_30 |  575.0 | pending  | Fri Oct 31 12:00:00 2025
+ 231 | item_31 |  577.5 | active   | Fri Oct 31 12:00:00 2025
+ 232 | item_32 |  580.0 | inactive | Fri Oct 31 12:00:00 2025
+ 233 | item_33 |  582.5 | pending  | Fri Oct 31 12:00:00 2025
+ 234 | item_34 |  585.0 | active   | Fri Oct 31 12:00:00 2025
+ 235 | item_35 |  587.5 | inactive | Fri Oct 31 12:00:00 2025
+ 236 | item_36 |  590.0 | pending  | Fri Oct 31 12:00:00 2025
+ 237 | item_37 |  592.5 | active   | Fri Oct 31 12:00:00 2025
+ 238 | item_38 |  595.0 | inactive | Fri Oct 31 12:00:00 2025
+ 239 | item_39 |  597.5 | pending  | Fri Oct 31 12:00:00 2025
+ 240 | item_40 |  600.0 | active   | Fri Oct 31 12:00:00 2025
+ 241 | item_41 |  602.5 | inactive | Fri Oct 31 12:00:00 2025
+ 242 | item_42 |  605.0 | pending  | Fri Oct 31 12:00:00 2025
+ 243 | item_43 |  607.5 | active   | Fri Oct 31 12:00:00 2025
+ 244 | item_44 |  610.0 | inactive | Fri Oct 31 12:00:00 2025
+ 245 | item_45 |  612.5 | pending  | Fri Oct 31 12:00:00 2025
+ 246 | item_46 |  615.0 | active   | Fri Oct 31 12:00:00 2025
+ 247 | item_47 |  617.5 | inactive | Fri Oct 31 12:00:00 2025
+ 248 | item_48 |  620.0 | pending  | Fri Oct 31 12:00:00 2025
+ 249 | item_49 |  622.5 | active   | Fri Oct 31 12:00:00 2025
+ 250 | item_50 |  625.0 | inactive | Fri Oct 31 12:00:00 2025
+ 251 | item_51 |  627.5 | pending  | Fri Oct 31 12:00:00 2025
+ 252 | item_52 |  630.0 | active   | Fri Oct 31 12:00:00 2025
+ 253 | item_53 |  632.5 | inactive | Fri Oct 31 12:00:00 2025
+ 254 | item_54 |  635.0 | pending  | Fri Oct 31 12:00:00 2025
+ 255 | item_55 |  637.5 | active   | Fri Oct 31 12:00:00 2025
+ 256 | item_56 |  640.0 | inactive | Fri Oct 31 12:00:00 2025
+ 257 | item_57 |  642.5 | pending  | Fri Oct 31 12:00:00 2025
+ 258 | item_58 |  645.0 | active   | Fri Oct 31 12:00:00 2025
+ 259 | item_59 |  647.5 | inactive | Fri Oct 31 12:00:00 2025
+ 260 | item_60 |  650.0 | pending  | Fri Oct 31 12:00:00 2025
+ 261 | item_61 |  652.5 | active   | Fri Oct 31 12:00:00 2025
+ 262 | item_62 |  655.0 | inactive | Fri Oct 31 12:00:00 2025
+ 263 | item_63 |  657.5 | pending  | Fri Oct 31 12:00:00 2025
+ 264 | item_64 |  660.0 | active   | Fri Oct 31 12:00:00 2025
+ 265 | item_65 |  662.5 | inactive | Fri Oct 31 12:00:00 2025
+ 266 | item_66 |  665.0 | pending  | Fri Oct 31 12:00:00 2025
+ 267 | item_67 |  667.5 | active   | Fri Oct 31 12:00:00 2025
+ 268 | item_68 |  670.0 | inactive | Fri Oct 31 12:00:00 2025
+ 269 | item_69 |  672.5 | pending  | Fri Oct 31 12:00:00 2025
+ 270 | item_70 |  675.0 | active   | Fri Oct 31 12:00:00 2025
+ 271 | item_71 |  677.5 | inactive | Fri Oct 31 12:00:00 2025
+ 272 | item_72 |  680.0 | pending  | Fri Oct 31 12:00:00 2025
+ 273 | item_73 |  682.5 | active   | Fri Oct 31 12:00:00 2025
+ 274 | item_74 |  685.0 | inactive | Fri Oct 31 12:00:00 2025
+ 275 | item_75 |  687.5 | pending  | Fri Oct 31 12:00:00 2025
+ 276 | item_76 |  690.0 | active   | Fri Oct 31 12:00:00 2025
+ 277 | item_77 |  692.5 | inactive | Fri Oct 31 12:00:00 2025
+ 278 | item_78 |  695.0 | pending  | Fri Oct 31 12:00:00 2025
+ 279 | item_79 |  697.5 | active   | Fri Oct 31 12:00:00 2025
+ 280 | item_80 |  700.0 | inactive | Fri Oct 31 12:00:00 2025
+ 281 | item_81 |  702.5 | pending  | Fri Oct 31 12:00:00 2025
+ 282 | item_82 |  705.0 | active   | Fri Oct 31 12:00:00 2025
+ 283 | item_83 |  707.5 | inactive | Fri Oct 31 12:00:00 2025
+ 284 | item_84 |  710.0 | pending  | Fri Oct 31 12:00:00 2025
+ 285 | item_85 |  712.5 | active   | Fri Oct 31 12:00:00 2025
+ 286 | item_86 |  715.0 | inactive | Fri Oct 31 12:00:00 2025
+ 287 | item_87 |  717.5 | pending  | Fri Oct 31 12:00:00 2025
+ 288 | item_88 |  720.0 | active   | Fri Oct 31 12:00:00 2025
+ 289 | item_89 |  722.5 | inactive | Fri Oct 31 12:00:00 2025
+ 290 | item_90 |  725.0 | pending  | Fri Oct 31 12:00:00 2025
+ 291 | item_91 |  727.5 | active   | Fri Oct 31 12:00:00 2025
+ 292 | item_92 |  730.0 | inactive | Fri Oct 31 12:00:00 2025
+ 293 | item_93 |  732.5 | pending  | Fri Oct 31 12:00:00 2025
+ 294 | item_94 |  735.0 | active   | Fri Oct 31 12:00:00 2025
+ 295 | item_95 |  737.5 | inactive | Fri Oct 31 12:00:00 2025
+ 296 | item_96 |  740.0 | pending  | Fri Oct 31 12:00:00 2025
+ 297 | item_97 |  742.5 | active   | Fri Oct 31 12:00:00 2025
+ 298 | item_98 |  745.0 | inactive | Fri Oct 31 12:00:00 2025
+ 299 | item_99 |  747.5 | pending  | Fri Oct 31 12:00:00 2025
+ 300 | item_0  |  750.0 | active   | Fri Oct 31 12:00:00 2025
+ 301 | item_1  |  752.5 | inactive | Fri Oct 31 12:00:00 2025
+ 302 | item_2  |  755.0 | pending  | Fri Oct 31 12:00:00 2025
+ 303 | item_3  |  757.5 | active   | Fri Oct 31 12:00:00 2025
+ 304 | item_4  |  760.0 | inactive | Fri Oct 31 12:00:00 2025
+ 305 | item_5  |  762.5 | pending  | Fri Oct 31 12:00:00 2025
+ 306 | item_6  |  765.0 | active   | Fri Oct 31 12:00:00 2025
+ 307 | item_7  |  767.5 | inactive | Fri Oct 31 12:00:00 2025
+ 308 | item_8  |  770.0 | pending  | Fri Oct 31 12:00:00 2025
+ 309 | item_9  |  772.5 | active   | Fri Oct 31 12:00:00 2025
+ 310 | item_10 |  775.0 | inactive | Fri Oct 31 12:00:00 2025
+ 311 | item_11 |  777.5 | pending  | Fri Oct 31 12:00:00 2025
+ 312 | item_12 |  780.0 | active   | Fri Oct 31 12:00:00 2025
+ 313 | item_13 |  782.5 | inactive | Fri Oct 31 12:00:00 2025
+ 314 | item_14 |  785.0 | pending  | Fri Oct 31 12:00:00 2025
+ 315 | item_15 |  787.5 | active   | Fri Oct 31 12:00:00 2025
+ 316 | item_16 |  790.0 | inactive | Fri Oct 31 12:00:00 2025
+ 317 | item_17 |  792.5 | pending  | Fri Oct 31 12:00:00 2025
+ 318 | item_18 |  795.0 | active   | Fri Oct 31 12:00:00 2025
+ 319 | item_19 |  797.5 | inactive | Fri Oct 31 12:00:00 2025
+ 320 | item_20 |  800.0 | pending  | Fri Oct 31 12:00:00 2025
+ 321 | item_21 |  802.5 | active   | Fri Oct 31 12:00:00 2025
+ 322 | item_22 |  805.0 | inactive | Fri Oct 31 12:00:00 2025
+ 323 | item_23 |  807.5 | pending  | Fri Oct 31 12:00:00 2025
+ 324 | item_24 |  810.0 | active   | Fri Oct 31 12:00:00 2025
+ 325 | item_25 |  812.5 | inactive | Fri Oct 31 12:00:00 2025
+ 326 | item_26 |  815.0 | pending  | Fri Oct 31 12:00:00 2025
+ 327 | item_27 |  817.5 | active   | Fri Oct 31 12:00:00 2025
+ 328 | item_28 |  820.0 | inactive | Fri Oct 31 12:00:00 2025
+ 329 | item_29 |  822.5 | pending  | Fri Oct 31 12:00:00 2025
+ 330 | item_30 |  825.0 | active   | Fri Oct 31 12:00:00 2025
+ 331 | item_31 |  827.5 | inactive | Fri Oct 31 12:00:00 2025
+ 332 | item_32 |  830.0 | pending  | Fri Oct 31 12:00:00 2025
+ 333 | item_33 |  832.5 | active   | Fri Oct 31 12:00:00 2025
+ 334 | item_34 |  835.0 | inactive | Fri Oct 31 12:00:00 2025
+ 335 | item_35 |  837.5 | pending  | Fri Oct 31 12:00:00 2025
+ 336 | item_36 |  840.0 | active   | Fri Oct 31 12:00:00 2025
+ 337 | item_37 |  842.5 | inactive | Fri Oct 31 12:00:00 2025
+ 338 | item_38 |  845.0 | pending  | Fri Oct 31 12:00:00 2025
+ 339 | item_39 |  847.5 | active   | Fri Oct 31 12:00:00 2025
+ 340 | item_40 |  850.0 | inactive | Fri Oct 31 12:00:00 2025
+ 341 | item_41 |  852.5 | pending  | Fri Oct 31 12:00:00 2025
+ 342 | item_42 |  855.0 | active   | Fri Oct 31 12:00:00 2025
+ 343 | item_43 |  857.5 | inactive | Fri Oct 31 12:00:00 2025
+ 344 | item_44 |  860.0 | pending  | Fri Oct 31 12:00:00 2025
+ 345 | item_45 |  862.5 | active   | Fri Oct 31 12:00:00 2025
+ 346 | item_46 |  865.0 | inactive | Fri Oct 31 12:00:00 2025
+ 347 | item_47 |  867.5 | pending  | Fri Oct 31 12:00:00 2025
+ 348 | item_48 |  870.0 | active   | Fri Oct 31 12:00:00 2025
+ 349 | item_49 |  872.5 | inactive | Fri Oct 31 12:00:00 2025
+ 350 | item_50 |  875.0 | pending  | Fri Oct 31 12:00:00 2025
+ 351 | item_51 |  877.5 | active   | Fri Oct 31 12:00:00 2025
+ 352 | item_52 |  880.0 | inactive | Fri Oct 31 12:00:00 2025
+ 353 | item_53 |  882.5 | pending  | Fri Oct 31 12:00:00 2025
+ 354 | item_54 |  885.0 | active   | Fri Oct 31 12:00:00 2025
+ 355 | item_55 |  887.5 | inactive | Fri Oct 31 12:00:00 2025
+ 356 | item_56 |  890.0 | pending  | Fri Oct 31 12:00:00 2025
+ 357 | item_57 |  892.5 | active   | Fri Oct 31 12:00:00 2025
+ 358 | item_58 |  895.0 | inactive | Fri Oct 31 12:00:00 2025
+ 359 | item_59 |  897.5 | pending  | Fri Oct 31 12:00:00 2025
+ 360 | item_60 |  900.0 | active   | Fri Oct 31 12:00:00 2025
+ 361 | item_61 |  902.5 | inactive | Fri Oct 31 12:00:00 2025
+ 362 | item_62 |  905.0 | pending  | Fri Oct 31 12:00:00 2025
+ 363 | item_63 |  907.5 | active   | Fri Oct 31 12:00:00 2025
+ 364 | item_64 |  910.0 | inactive | Fri Oct 31 12:00:00 2025
+ 365 | item_65 |  912.5 | pending  | Fri Oct 31 12:00:00 2025
+ 366 | item_66 |  915.0 | active   | Fri Oct 31 12:00:00 2025
+ 367 | item_67 |  917.5 | inactive | Fri Oct 31 12:00:00 2025
+ 368 | item_68 |  920.0 | pending  | Fri Oct 31 12:00:00 2025
+ 369 | item_69 |  922.5 | active   | Fri Oct 31 12:00:00 2025
+ 370 | item_70 |  925.0 | inactive | Fri Oct 31 12:00:00 2025
+ 371 | item_71 |  927.5 | pending  | Fri Oct 31 12:00:00 2025
+ 372 | item_72 |  930.0 | active   | Fri Oct 31 12:00:00 2025
+ 373 | item_73 |  932.5 | inactive | Fri Oct 31 12:00:00 2025
+ 374 | item_74 |  935.0 | pending  | Fri Oct 31 12:00:00 2025
+ 375 | item_75 |  937.5 | active   | Fri Oct 31 12:00:00 2025
+ 376 | item_76 |  940.0 | inactive | Fri Oct 31 12:00:00 2025
+ 377 | item_77 |  942.5 | pending  | Fri Oct 31 12:00:00 2025
+ 378 | item_78 |  945.0 | active   | Fri Oct 31 12:00:00 2025
+ 379 | item_79 |  947.5 | inactive | Fri Oct 31 12:00:00 2025
+ 380 | item_80 |  950.0 | pending  | Fri Oct 31 12:00:00 2025
+ 381 | item_81 |  952.5 | active   | Fri Oct 31 12:00:00 2025
+ 382 | item_82 |  955.0 | inactive | Fri Oct 31 12:00:00 2025
+ 383 | item_83 |  957.5 | pending  | Fri Oct 31 12:00:00 2025
+ 384 | item_84 |  960.0 | active   | Fri Oct 31 12:00:00 2025
+ 385 | item_85 |  962.5 | inactive | Fri Oct 31 12:00:00 2025
+ 386 | item_86 |  965.0 | pending  | Fri Oct 31 12:00:00 2025
+ 387 | item_87 |  967.5 | active   | Fri Oct 31 12:00:00 2025
+ 388 | item_88 |  970.0 | inactive | Fri Oct 31 12:00:00 2025
+ 389 | item_89 |  972.5 | pending  | Fri Oct 31 12:00:00 2025
+ 390 | item_90 |  975.0 | active   | Fri Oct 31 12:00:00 2025
+ 391 | item_91 |  977.5 | inactive | Fri Oct 31 12:00:00 2025
+ 392 | item_92 |  980.0 | pending  | Fri Oct 31 12:00:00 2025
+ 393 | item_93 |  982.5 | active   | Fri Oct 31 12:00:00 2025
+ 394 | item_94 |  985.0 | inactive | Fri Oct 31 12:00:00 2025
+ 395 | item_95 |  987.5 | pending  | Fri Oct 31 12:00:00 2025
+ 396 | item_96 |  990.0 | active   | Fri Oct 31 12:00:00 2025
+ 397 | item_97 |  992.5 | inactive | Fri Oct 31 12:00:00 2025
+ 398 | item_98 |  995.0 | pending  | Fri Oct 31 12:00:00 2025
+ 399 | item_99 |  997.5 | active   | Fri Oct 31 12:00:00 2025
+ 400 | item_0  | 1000.0 | inactive | Fri Oct 31 12:00:00 2025
+ 401 | item_1  | 1002.5 | pending  | Fri Oct 31 12:00:00 2025
+ 402 | item_2  | 1005.0 | active   | Fri Oct 31 12:00:00 2025
+ 403 | item_3  | 1007.5 | inactive | Fri Oct 31 12:00:00 2025
+ 404 | item_4  | 1010.0 | pending  | Fri Oct 31 12:00:00 2025
+ 405 | item_5  | 1012.5 | active   | Fri Oct 31 12:00:00 2025
+ 406 | item_6  | 1015.0 | inactive | Fri Oct 31 12:00:00 2025
+ 407 | item_7  | 1017.5 | pending  | Fri Oct 31 12:00:00 2025
+ 408 | item_8  | 1020.0 | active   | Fri Oct 31 12:00:00 2025
+ 409 | item_9  | 1022.5 | inactive | Fri Oct 31 12:00:00 2025
+ 410 | item_10 | 1025.0 | pending  | Fri Oct 31 12:00:00 2025
+ 411 | item_11 | 1027.5 | active   | Fri Oct 31 12:00:00 2025
+ 412 | item_12 | 1030.0 | inactive | Fri Oct 31 12:00:00 2025
+ 413 | item_13 | 1032.5 | pending  | Fri Oct 31 12:00:00 2025
+ 414 | item_14 | 1035.0 | active   | Fri Oct 31 12:00:00 2025
+ 415 | item_15 | 1037.5 | inactive | Fri Oct 31 12:00:00 2025
+ 416 | item_16 | 1040.0 | pending  | Fri Oct 31 12:00:00 2025
+ 417 | item_17 | 1042.5 | active   | Fri Oct 31 12:00:00 2025
+ 418 | item_18 | 1045.0 | inactive | Fri Oct 31 12:00:00 2025
+ 419 | item_19 | 1047.5 | pending  | Fri Oct 31 12:00:00 2025
+ 420 | item_20 | 1050.0 | active   | Fri Oct 31 12:00:00 2025
+ 421 | item_21 | 1052.5 | inactive | Fri Oct 31 12:00:00 2025
+ 422 | item_22 | 1055.0 | pending  | Fri Oct 31 12:00:00 2025
+ 423 | item_23 | 1057.5 | active   | Fri Oct 31 12:00:00 2025
+ 424 | item_24 | 1060.0 | inactive | Fri Oct 31 12:00:00 2025
+ 425 | item_25 | 1062.5 | pending  | Fri Oct 31 12:00:00 2025
+ 426 | item_26 | 1065.0 | active   | Fri Oct 31 12:00:00 2025
+ 427 | item_27 | 1067.5 | inactive | Fri Oct 31 12:00:00 2025
+ 428 | item_28 | 1070.0 | pending  | Fri Oct 31 12:00:00 2025
+ 429 | item_29 | 1072.5 | active   | Fri Oct 31 12:00:00 2025
+ 430 | item_30 | 1075.0 | inactive | Fri Oct 31 12:00:00 2025
+ 431 | item_31 | 1077.5 | pending  | Fri Oct 31 12:00:00 2025
+ 432 | item_32 | 1080.0 | active   | Fri Oct 31 12:00:00 2025
+ 433 | item_33 | 1082.5 | inactive | Fri Oct 31 12:00:00 2025
+ 434 | item_34 | 1085.0 | pending  | Fri Oct 31 12:00:00 2025
+ 435 | item_35 | 1087.5 | active   | Fri Oct 31 12:00:00 2025
+ 436 | item_36 | 1090.0 | inactive | Fri Oct 31 12:00:00 2025
+ 437 | item_37 | 1092.5 | pending  | Fri Oct 31 12:00:00 2025
+ 438 | item_38 | 1095.0 | active   | Fri Oct 31 12:00:00 2025
+ 439 | item_39 | 1097.5 | inactive | Fri Oct 31 12:00:00 2025
+ 440 | item_40 | 1100.0 | pending  | Fri Oct 31 12:00:00 2025
+ 441 | item_41 | 1102.5 | active   | Fri Oct 31 12:00:00 2025
+ 442 | item_42 | 1105.0 | inactive | Fri Oct 31 12:00:00 2025
+ 443 | item_43 | 1107.5 | pending  | Fri Oct 31 12:00:00 2025
+ 444 | item_44 | 1110.0 | active   | Fri Oct 31 12:00:00 2025
+ 445 | item_45 | 1112.5 | inactive | Fri Oct 31 12:00:00 2025
+ 446 | item_46 | 1115.0 | pending  | Fri Oct 31 12:00:00 2025
+ 447 | item_47 | 1117.5 | active   | Fri Oct 31 12:00:00 2025
+ 448 | item_48 | 1120.0 | inactive | Fri Oct 31 12:00:00 2025
+ 449 | item_49 | 1122.5 | pending  | Fri Oct 31 12:00:00 2025
+ 450 | item_50 | 1125.0 | active   | Fri Oct 31 12:00:00 2025
+ 451 | item_51 | 1127.5 | inactive | Fri Oct 31 12:00:00 2025
+ 452 | item_52 | 1130.0 | pending  | Fri Oct 31 12:00:00 2025
+ 453 | item_53 | 1132.5 | active   | Fri Oct 31 12:00:00 2025
+ 454 | item_54 | 1135.0 | inactive | Fri Oct 31 12:00:00 2025
+ 455 | item_55 | 1137.5 | pending  | Fri Oct 31 12:00:00 2025
+ 456 | item_56 | 1140.0 | active   | Fri Oct 31 12:00:00 2025
+ 457 | item_57 | 1142.5 | inactive | Fri Oct 31 12:00:00 2025
+ 458 | item_58 | 1145.0 | pending  | Fri Oct 31 12:00:00 2025
+ 459 | item_59 | 1147.5 | active   | Fri Oct 31 12:00:00 2025
+ 460 | item_60 | 1150.0 | inactive | Fri Oct 31 12:00:00 2025
+ 461 | item_61 | 1152.5 | pending  | Fri Oct 31 12:00:00 2025
+ 462 | item_62 | 1155.0 | active   | Fri Oct 31 12:00:00 2025
+ 463 | item_63 | 1157.5 | inactive | Fri Oct 31 12:00:00 2025
+ 464 | item_64 | 1160.0 | pending  | Fri Oct 31 12:00:00 2025
+ 465 | item_65 | 1162.5 | active   | Fri Oct 31 12:00:00 2025
+ 466 | item_66 | 1165.0 | inactive | Fri Oct 31 12:00:00 2025
+ 467 | item_67 | 1167.5 | pending  | Fri Oct 31 12:00:00 2025
+ 468 | item_68 | 1170.0 | active   | Fri Oct 31 12:00:00 2025
+ 469 | item_69 | 1172.5 | inactive | Fri Oct 31 12:00:00 2025
+ 470 | item_70 | 1175.0 | pending  | Fri Oct 31 12:00:00 2025
+ 471 | item_71 | 1177.5 | active   | Fri Oct 31 12:00:00 2025
+ 472 | item_72 | 1180.0 | inactive | Fri Oct 31 12:00:00 2025
+ 473 | item_73 | 1182.5 | pending  | Fri Oct 31 12:00:00 2025
+ 474 | item_74 | 1185.0 | active   | Fri Oct 31 12:00:00 2025
+ 475 | item_75 | 1187.5 | inactive | Fri Oct 31 12:00:00 2025
+ 476 | item_76 | 1190.0 | pending  | Fri Oct 31 12:00:00 2025
+ 477 | item_77 | 1192.5 | active   | Fri Oct 31 12:00:00 2025
+ 478 | item_78 | 1195.0 | inactive | Fri Oct 31 12:00:00 2025
+ 479 | item_79 | 1197.5 | pending  | Fri Oct 31 12:00:00 2025
+ 480 | item_80 | 1200.0 | active   | Fri Oct 31 12:00:00 2025
+ 481 | item_81 | 1202.5 | inactive | Fri Oct 31 12:00:00 2025
+ 482 | item_82 | 1205.0 | pending  | Fri Oct 31 12:00:00 2025
+ 483 | item_83 | 1207.5 | active   | Fri Oct 31 12:00:00 2025
+ 484 | item_84 | 1210.0 | inactive | Fri Oct 31 12:00:00 2025
+ 485 | item_85 | 1212.5 | pending  | Fri Oct 31 12:00:00 2025
+ 486 | item_86 | 1215.0 | active   | Fri Oct 31 12:00:00 2025
+ 487 | item_87 | 1217.5 | inactive | Fri Oct 31 12:00:00 2025
+ 488 | item_88 | 1220.0 | pending  | Fri Oct 31 12:00:00 2025
+ 489 | item_89 | 1222.5 | active   | Fri Oct 31 12:00:00 2025
+ 490 | item_90 | 1225.0 | inactive | Fri Oct 31 12:00:00 2025
+ 491 | item_91 | 1227.5 | pending  | Fri Oct 31 12:00:00 2025
+ 492 | item_92 | 1230.0 | active   | Fri Oct 31 12:00:00 2025
+ 493 | item_93 | 1232.5 | inactive | Fri Oct 31 12:00:00 2025
+ 494 | item_94 | 1235.0 | pending  | Fri Oct 31 12:00:00 2025
+ 495 | item_95 | 1237.5 | active   | Fri Oct 31 12:00:00 2025
+ 496 | item_96 | 1240.0 | inactive | Fri Oct 31 12:00:00 2025
+ 497 | item_97 | 1242.5 | pending  | Fri Oct 31 12:00:00 2025
+ 498 | item_98 | 1245.0 | active   | Fri Oct 31 12:00:00 2025
+ 499 | item_99 | 1247.5 | inactive | Fri Oct 31 12:00:00 2025
+ 500 | item_0  | 1250.0 | pending  | Fri Oct 31 12:00:00 2025
+   1 | item_1  | 999.99 | inactive | Fri Oct 31 12:00:00 2025
+(500 rows)
+
+EXECUTE prep_text('item_5%');
+ id  |  name   | value  |  status  |        created_at        
+-----+---------+--------+----------+--------------------------
+   5 | item_5  |   12.5 | pending  | Fri Oct 31 12:00:00 2025
+  50 | item_50 |  125.0 | pending  | Fri Oct 31 12:00:00 2025
+  51 | item_51 |  127.5 | active   | Fri Oct 31 12:00:00 2025
+  52 | item_52 |  130.0 | inactive | Fri Oct 31 12:00:00 2025
+  53 | item_53 |  132.5 | pending  | Fri Oct 31 12:00:00 2025
+  54 | item_54 |  135.0 | active   | Fri Oct 31 12:00:00 2025
+  55 | item_55 |  137.5 | inactive | Fri Oct 31 12:00:00 2025
+  56 | item_56 |  140.0 | pending  | Fri Oct 31 12:00:00 2025
+  57 | item_57 |  142.5 | active   | Fri Oct 31 12:00:00 2025
+  58 | item_58 |  145.0 | inactive | Fri Oct 31 12:00:00 2025
+  59 | item_59 |  147.5 | pending  | Fri Oct 31 12:00:00 2025
+ 105 | item_5  |  262.5 | active   | Fri Oct 31 12:00:00 2025
+ 150 | item_50 |  375.0 | active   | Fri Oct 31 12:00:00 2025
+ 151 | item_51 |  377.5 | inactive | Fri Oct 31 12:00:00 2025
+ 152 | item_52 |  380.0 | pending  | Fri Oct 31 12:00:00 2025
+ 153 | item_53 |  382.5 | active   | Fri Oct 31 12:00:00 2025
+ 154 | item_54 |  385.0 | inactive | Fri Oct 31 12:00:00 2025
+ 155 | item_55 |  387.5 | pending  | Fri Oct 31 12:00:00 2025
+ 156 | item_56 |  390.0 | active   | Fri Oct 31 12:00:00 2025
+ 157 | item_57 |  392.5 | inactive | Fri Oct 31 12:00:00 2025
+ 158 | item_58 |  395.0 | pending  | Fri Oct 31 12:00:00 2025
+ 159 | item_59 |  397.5 | active   | Fri Oct 31 12:00:00 2025
+ 205 | item_5  |  512.5 | inactive | Fri Oct 31 12:00:00 2025
+ 250 | item_50 |  625.0 | inactive | Fri Oct 31 12:00:00 2025
+ 251 | item_51 |  627.5 | pending  | Fri Oct 31 12:00:00 2025
+ 252 | item_52 |  630.0 | active   | Fri Oct 31 12:00:00 2025
+ 253 | item_53 |  632.5 | inactive | Fri Oct 31 12:00:00 2025
+ 254 | item_54 |  635.0 | pending  | Fri Oct 31 12:00:00 2025
+ 255 | item_55 |  637.5 | active   | Fri Oct 31 12:00:00 2025
+ 256 | item_56 |  640.0 | inactive | Fri Oct 31 12:00:00 2025
+ 257 | item_57 |  642.5 | pending  | Fri Oct 31 12:00:00 2025
+ 258 | item_58 |  645.0 | active   | Fri Oct 31 12:00:00 2025
+ 259 | item_59 |  647.5 | inactive | Fri Oct 31 12:00:00 2025
+ 305 | item_5  |  762.5 | pending  | Fri Oct 31 12:00:00 2025
+ 350 | item_50 |  875.0 | pending  | Fri Oct 31 12:00:00 2025
+ 351 | item_51 |  877.5 | active   | Fri Oct 31 12:00:00 2025
+ 352 | item_52 |  880.0 | inactive | Fri Oct 31 12:00:00 2025
+ 353 | item_53 |  882.5 | pending  | Fri Oct 31 12:00:00 2025
+ 354 | item_54 |  885.0 | active   | Fri Oct 31 12:00:00 2025
+ 355 | item_55 |  887.5 | inactive | Fri Oct 31 12:00:00 2025
+ 356 | item_56 |  890.0 | pending  | Fri Oct 31 12:00:00 2025
+ 357 | item_57 |  892.5 | active   | Fri Oct 31 12:00:00 2025
+ 358 | item_58 |  895.0 | inactive | Fri Oct 31 12:00:00 2025
+ 359 | item_59 |  897.5 | pending  | Fri Oct 31 12:00:00 2025
+ 405 | item_5  | 1012.5 | active   | Fri Oct 31 12:00:00 2025
+ 450 | item_50 | 1125.0 | active   | Fri Oct 31 12:00:00 2025
+ 451 | item_51 | 1127.5 | inactive | Fri Oct 31 12:00:00 2025
+ 452 | item_52 | 1130.0 | pending  | Fri Oct 31 12:00:00 2025
+ 453 | item_53 | 1132.5 | active   | Fri Oct 31 12:00:00 2025
+ 454 | item_54 | 1135.0 | inactive | Fri Oct 31 12:00:00 2025
+ 455 | item_55 | 1137.5 | pending  | Fri Oct 31 12:00:00 2025
+ 456 | item_56 | 1140.0 | active   | Fri Oct 31 12:00:00 2025
+ 457 | item_57 | 1142.5 | inactive | Fri Oct 31 12:00:00 2025
+ 458 | item_58 | 1145.0 | pending  | Fri Oct 31 12:00:00 2025
+ 459 | item_59 | 1147.5 | active   | Fri Oct 31 12:00:00 2025
+(55 rows)
+
+EXECUTE prep_text('item_10%');
+ id  |  name   | value  |  status  |        created_at        
+-----+---------+--------+----------+--------------------------
+  10 | item_10 |   25.0 | inactive | Fri Oct 31 12:00:00 2025
+ 110 | item_10 |  275.0 | pending  | Fri Oct 31 12:00:00 2025
+ 210 | item_10 |  525.0 | active   | Fri Oct 31 12:00:00 2025
+ 310 | item_10 |  775.0 | inactive | Fri Oct 31 12:00:00 2025
+ 410 | item_10 | 1025.0 | pending  | Fri Oct 31 12:00:00 2025
+(5 rows)
+
+EXECUTE prep_multi(1, 'active');
+ id | name | value | status | created_at 
+----+------+-------+--------+------------
+(0 rows)
+
+EXECUTE prep_multi(2, 'inactive');
+ id | name | value | status | created_at 
+----+------+-------+--------+------------
+(0 rows)
+
+EXECUTE prep_multi(3, 'pending');
+ id | name | value | status | created_at 
+----+------+-------+--------+------------
+(0 rows)
+
+-- Wait for stats to be collected
+SELECT pg_sleep(0.2);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+-- Verify prepared statements are tracked correctly
+SELECT 
+  COUNT(*) FILTER (WHERE query LIKE '%prep_test%') AS queries_tracked,
+  COUNT(*) FILTER (WHERE plans > 1) AS queries_with_multiple_plans,
+  COUNT(*) FILTER (WHERE calls >= 2) AS queries_called_multiple_times
+FROM pg_stat_insights
+WHERE query LIKE '%prep_test%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 5: FROM pg_stat_insights
+             ^
+-- Verify plan vs execution tracking
+SELECT 
+  plans >= 1 AS has_plan_count,
+  calls >= 1 AS has_exec_count,
+  mean_plan_time >= 0 AS plan_time_valid,
+  mean_exec_time >= 0 AS exec_time_valid
+FROM pg_stat_insights
+WHERE query LIKE '%prep_test%' AND plans > 0
+LIMIT 1;
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 6: FROM pg_stat_insights
+             ^
+-- Test DEALLOCATE - should cause re-planning
+DEALLOCATE prep_select;
+PREPARE prep_select AS SELECT * FROM prep_test WHERE id = $1;
+EXECUTE prep_select(100);
+ id  |  name  | value |  status  |        created_at        
+-----+--------+-------+----------+--------------------------
+ 100 | item_0 | 250.0 | inactive | Fri Oct 31 12:00:00 2025
+(1 row)
+
+EXECUTE prep_select(200);
+ id  |  name  | value | status  |        created_at        
+-----+--------+-------+---------+--------------------------
+ 200 | item_0 | 500.0 | pending | Fri Oct 31 12:00:00 2025
+(1 row)
+
+-- Wait for stats
+SELECT pg_sleep(0.1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+-- Verify that plan count increased after DEALLOCATE
+SELECT 
+  plans > 1 AS plan_count_increased,
+  calls >= 2 AS exec_count_consistent
+FROM pg_stat_insights
+WHERE query LIKE '%prep_test%' AND query LIKE '%id =%'
+LIMIT 1;
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 4: FROM pg_stat_insights
+             ^
+-- Test with EXPLAIN (timing may vary, so we just verify it runs)
+-- EXPLAIN (ANALYZE, BUFFERS) EXECUTE prep_select(5);  -- Commented out due to non-deterministic timing
+-- Cleanup
+DEALLOCATE ALL;

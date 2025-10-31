@@ -1,0 +1,63 @@
+-- ============================================================================
+-- Test 1: Extension Basics
+-- Tests extension creation, versioning, and basic metadata
+-- ============================================================================
+-- Create the extension
+CREATE EXTENSION pg_stat_insights;
+-- Verify extension is installed
+SELECT extname, extversion FROM pg_extension WHERE extname = 'pg_stat_insights';
+     extname      | extversion 
+------------------+------------
+ pg_stat_insights | 1.0
+(1 row)
+
+-- Check that all main objects exist
+SELECT proname FROM pg_proc WHERE proname LIKE 'pg_stat_insights%' ORDER BY proname;
+              proname               
+------------------------------------
+ pg_stat_insights
+ pg_stat_insights_replication_stats
+ pg_stat_insights_reset
+ pg_stat_insights_reset
+(4 rows)
+
+-- Check that all views exist
+SELECT viewname FROM pg_views WHERE viewname LIKE 'pg_stat_insights%' ORDER BY viewname;
+              viewname              
+------------------------------------
+ pg_stat_insights
+ pg_stat_insights_by_bucket
+ pg_stat_insights_errors
+ pg_stat_insights_histogram_summary
+ pg_stat_insights_plan_errors
+ pg_stat_insights_replication
+ pg_stat_insights_slow_queries
+ pg_stat_insights_top_by_calls
+ pg_stat_insights_top_by_io
+ pg_stat_insights_top_by_time
+ pg_stat_insights_top_cache_misses
+(11 rows)
+
+-- Verify function signatures
+\df pg_stat_insights_reset
+                                        List of functions
+ Schema |          Name          | Result data type |         Argument data types          | Type 
+--------+------------------------+------------------+--------------------------------------+------
+ public | pg_stat_insights_reset | void             |                                      | func
+ public | pg_stat_insights_reset | void             | userid oid, dbid oid, queryid bigint | func
+(2 rows)
+
+-- Test basic function calls (should not error)
+SELECT pg_stat_insights_reset();
+ pg_stat_insights_reset 
+------------------------
+ 
+(1 row)
+
+-- Verify main view is accessible
+SELECT COUNT(*) >= 0 AS view_accessible FROM pg_stat_insights;
+ view_accessible 
+-----------------
+ t
+(1 row)
+
