@@ -209,14 +209,24 @@ jobs:
             export PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg_version }}/bin/pg_config
           fi
           
-          if [ "${{ matrix.platform }}" = "ubuntu" ] || [ "${{ matrix.platform }}" = "rocky" ]; then
-            sudo make install PG_CONFIG=$PG_CONFIG
-          else
+          # Check if we're root (container) or need sudo
+          if [ "$(id -u)" = "0" ]; then
             make install PG_CONFIG=$PG_CONFIG
+          elif [ "${{ matrix.platform }}" = "macos" ]; then
+            make install PG_CONFIG=$PG_CONFIG
+          else
+            sudo make install PG_CONFIG=$PG_CONFIG
           fi
       
       - name: Start PostgreSQL and run tests
         run: |
+          # Determine if we need sudo
+          if [ "$(id -u)" = "0" ]; then
+            SUDO=""
+          else
+            SUDO="sudo"
+          fi
+          
           # Set PG_CONFIG based on platform
           if [ "${{ matrix.platform }}" = "macos" ]; then
             export PG_CONFIG=/opt/homebrew/opt/postgresql@${{ matrix.pg_version }}/bin/pg_config
@@ -225,16 +235,16 @@ jobs:
             createdb contrib_regression || true
           elif [ "${{ matrix.platform }}" = "rocky" ]; then
             export PG_CONFIG=/usr/pgsql-${{ matrix.pg_version }}/bin/pg_config
-            sudo /usr/pgsql-${{ matrix.pg_version }}/bin/postgresql-${{ matrix.pg_version }}-setup initdb || true
-            sudo systemctl start postgresql-${{ matrix.pg_version }}
+            $SUDO /usr/pgsql-${{ matrix.pg_version }}/bin/postgresql-${{ matrix.pg_version }}-setup initdb || true
+            $SUDO systemctl start postgresql-${{ matrix.pg_version }}
             sleep 3
-            sudo -u postgres createdb contrib_regression || true
+            $SUDO -u postgres createdb contrib_regression || true
             export PGUSER=postgres
           else
             export PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg_version }}/bin/pg_config
-            sudo systemctl start postgresql
+            $SUDO systemctl start postgresql
             sleep 3
-            sudo -u postgres createdb contrib_regression || true
+            $SUDO -u postgres createdb contrib_regression || true
             export PGUSER=postgres
           fi
           
