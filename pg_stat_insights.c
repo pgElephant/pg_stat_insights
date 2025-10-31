@@ -56,7 +56,7 @@
 #include "jit/jit.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
-#if PG_VERSION_NUM >= 170000
+#if PG_VERSION_NUM >= 150000
 #include "nodes/queryjumble.h"
 #else
 #include "utils/queryjumble.h"

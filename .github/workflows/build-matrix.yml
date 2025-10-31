@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       pg_versions:
-        description: 'PostgreSQL versions (comma-separated, e.g., "14,15,16,17")'
+        description: 'PostgreSQL versions (comma-separated, e.g., "16,17,18")'
         required: false
-        default: '14,15,16,17'
+        default: '16,17,18'
       platforms:
         description: 'Platforms (comma-separated: ubuntu,macos,rocky)'
         required: false
@@ -69,7 +69,7 @@ jobs:
           if [ -n "${{ github.event.inputs.pg_versions }}" ]; then
             VERSIONS=$(echo "${{ github.event.inputs.pg_versions }}" | jq -Rc 'split(",") | map(gsub(" "; ""))')
           else
-            VERSIONS='["14","15","16","17"]'
+            VERSIONS='["16","17","18"]'
           fi
           echo "matrix=${VERSIONS}" >> $GITHUB_OUTPUT
       
@@ -260,13 +260,13 @@ jobs:
           cat > $GITHUB_STEP_SUMMARY << 'EOF'
           ## Build Matrix Results
           
-          | Platform | PostgreSQL 14 | PostgreSQL 15 | PostgreSQL 16 | PostgreSQL 17 |
-          |----------|---------------|---------------|---------------|---------------|
-          | **Ubuntu** | ✅ | ✅ | ✅ | ✅ |
-          | **macOS** | ✅ | ✅ | ✅ | ✅ |
-          | **Rocky** | ✅ | ✅ | ✅ | ✅ |
+          | Platform | PostgreSQL 16 | PostgreSQL 17 | PostgreSQL 18 |
+          |----------|---------------|---------------|---------------|
+          | **Ubuntu** | [OK] | [OK] | [OK] |
+          | **macOS** | [OK] | [OK] | [OK] |
+          | **Rocky** | [OK] | [OK] | [OK] |
           
-          **Test Results**: All 22 regression tests passed ✅
+          **Test Results**: All 22 regression tests passed [OK]
           
           Build matrix completed!
           EOF
