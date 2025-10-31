@@ -56,7 +56,7 @@
 #include "jit/jit.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
-#include "nodes/queryjumble.h"
+#include "utils/queryjumble.h"
 #include "optimizer/planner.h"
 #include "parser/analyze.h"
 #include "parser/scanner.h"
