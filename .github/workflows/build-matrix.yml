@@ -250,11 +250,9 @@ jobs:
             su postgres -c "/usr/pgsql-${{ matrix.pg_version }}/bin/initdb -D $PGDATA --auth=trust --no-locale --encoding=UTF8"
             
             # Configure for trust authentication (overwrite default)
-            cat > "$PGDATA/pg_hba.conf" << 'EOFHBA'
-local   all   all   trust
-host    all   all   127.0.0.1/32   trust
-host    all   all   ::1/128        trust
-EOFHBA
+            echo "local   all   all   trust" > "$PGDATA/pg_hba.conf"
+            echo "host    all   all   127.0.0.1/32   trust" >> "$PGDATA/pg_hba.conf"
+            echo "host    all   all   ::1/128        trust" >> "$PGDATA/pg_hba.conf"
             chown postgres:postgres "$PGDATA/pg_hba.conf"
             
             # Start PostgreSQL using pg_ctl as postgres user
