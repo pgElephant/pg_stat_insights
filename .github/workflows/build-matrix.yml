@@ -338,7 +338,7 @@ jobs:
               elif [[ "$filename" =~ -pg([0-9]+) ]]; then
                 echo "${BASH_REMATCH[1]}"
               else
-                for pg_ver in 13 14 15 16 17 18; do
+                for pg_ver in 16 17 18; do
                   if [[ "$filename" =~ pg${pg_ver} ]] || [[ "$filename" =~ -pg${pg_ver} ]]; then
                     echo "$pg_ver"
                     return
@@ -386,7 +386,7 @@ jobs:
             
             if [ -f release/SHA256SUMS ]; then
               echo "📦 Copying checksums..."
-              for pg_ver in 13 14 15 16 17 18; do
+              for pg_ver in 16 17 18; do
                 [ -d "$RELEASES_DIR/rpm/pg${pg_ver}" ] && cp release/SHA256SUMS "$RELEASES_DIR/rpm/pg${pg_ver}/" 2>/dev/null || true
                 [ -d "$RELEASES_DIR/deb/pg${pg_ver}" ] && cp release/SHA256SUMS "$RELEASES_DIR/deb/pg${pg_ver}/" 2>/dev/null || true
                 [ -d "$RELEASES_DIR/osx/pg${pg_ver}" ] && cp release/SHA256SUMS "$RELEASES_DIR/osx/pg${pg_ver}/" 2>/dev/null || true
@@ -397,7 +397,7 @@ jobs:
             echo "✅ pgraft packages organized successfully"
             echo ""
             echo "📂 Package Summary:"
-            for pg_ver in 13 14 15 16 17 18; do
+            for pg_ver in 16 17 18; do
               if [ -d "$RELEASES_DIR/rpm/pg${pg_ver}" ] || [ -d "$RELEASES_DIR/deb/pg${pg_ver}" ] || [ -d "$RELEASES_DIR/osx/pg${pg_ver}" ]; then
                 echo "  PostgreSQL ${pg_ver}:"
                 echo "    RPM: $(ls -1 "$RELEASES_DIR/rpm/pg${pg_ver}" 2>/dev/null | wc -l) files"
