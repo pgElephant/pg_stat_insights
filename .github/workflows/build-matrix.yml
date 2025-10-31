@@ -242,23 +242,27 @@ jobs:
             
             # Initialize PostgreSQL data directory
             export PGDATA=/var/lib/pgsql/${{ matrix.pg_version }}/data
-            if [ ! -d "$PGDATA" ]; then
-              mkdir -p "$PGDATA"
-              chown -R postgres:postgres "$PGDATA"
-              su - postgres -c "/usr/pgsql-${{ matrix.pg_version }}/bin/initdb -D $PGDATA"
-            fi
+            mkdir -p "$PGDATA"
+            chown -R postgres:postgres /var/lib/pgsql
+            chmod 700 "$PGDATA"
             
-            # Configure for trust authentication
-            echo "local all all trust" > "$PGDATA/pg_hba.conf"
-            echo "host all all 127.0.0.1/32 trust" >> "$PGDATA/pg_hba.conf"
-            echo "host all all ::1/128 trust" >> "$PGDATA/pg_hba.conf"
+            # Run initdb as postgres user
+            su postgres -c "/usr/pgsql-${{ matrix.pg_version }}/bin/initdb -D $PGDATA --auth=trust --no-locale --encoding=UTF8"
             
-            # Start PostgreSQL using pg_ctl
-            su - postgres -c "/usr/pgsql-${{ matrix.pg_version }}/bin/pg_ctl -D $PGDATA -l /tmp/postgresql.log start"
-            sleep 5
+            # Configure for trust authentication (overwrite default)
+            cat > "$PGDATA/pg_hba.conf" << 'EOFHBA'
+local   all   all   trust
+host    all   all   127.0.0.1/32   trust
+host    all   all   ::1/128        trust
+EOFHBA
+            chown postgres:postgres "$PGDATA/pg_hba.conf"
+            
+            # Start PostgreSQL using pg_ctl as postgres user
+            su postgres -c "/usr/pgsql-${{ matrix.pg_version }}/bin/pg_ctl -D $PGDATA -l /tmp/postgresql.log start -w"
+            sleep 3
             
             # Create test database
-            su - postgres -c "/usr/pgsql-${{ matrix.pg_version }}/bin/createdb contrib_regression" || true
+            su postgres -c "/usr/pgsql-${{ matrix.pg_version }}/bin/createdb contrib_regression" || true
             export PGUSER=postgres
           else
             export PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg_version }}/bin/pg_config
