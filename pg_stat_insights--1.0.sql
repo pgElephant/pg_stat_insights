@@ -489,6 +489,153 @@ SELECT
     END AS status_message
 FROM pg_stat_replication r;
 
+-- Logical Replication Subscriptions (Subscriber side monitoring)
+CREATE VIEW pg_stat_insights_subscriptions AS
+SELECT 
+    s.subname AS subscription_name,
+    s.oid::int4 AS subscription_oid,
+    d.datname AS database,
+    CASE s.subenabled WHEN true THEN 'enabled' ELSE 'disabled' END AS status,
+    s.subconninfo AS connection_info,
+    s.subslotname AS slot_name,
+    s.subsynccommit AS sync_commit,
+    s.subpublications AS publications,
+    CASE 
+        WHEN NOT s.subenabled THEN 'Subscription disabled'
+        WHEN s.subslotname IS NULL THEN 'No replication slot'
+        ELSE 'Active'
+    END AS health_status,
+    CASE
+        WHEN NOT s.subenabled THEN 'Enable subscription: ALTER SUBSCRIPTION ' || s.subname || ' ENABLE'
+        WHEN s.subslotname IS NULL THEN 'Create slot or set slot_name'
+        ELSE NULL
+    END AS recommendation
+FROM pg_subscription s
+JOIN pg_database d ON d.oid = s.subdbid;
+
+-- Logical Replication Subscription Statistics
+CREATE VIEW pg_stat_insights_subscription_stats AS
+SELECT 
+    sr.subid,
+    s.subname AS subscription_name,
+    sr.relid,
+    n.nspname || '.' || c.relname AS table_name,
+    sr.srsubstate AS sync_state,
+    sr.srsublsn::text AS subscription_lsn,
+    CASE sr.srsubstate
+        WHEN 'i' THEN 'Initialize'
+        WHEN 'd' THEN 'Data copy'
+        WHEN 's' THEN 'Synchronized'
+        WHEN 'r' THEN 'Ready'
+        ELSE 'Unknown'
+    END AS sync_state_description,
+    CASE
+        WHEN sr.srsubstate = 's' THEN 'Fully synchronized'
+        WHEN sr.srsubstate = 'r' THEN 'Ready for sync'
+        WHEN sr.srsubstate = 'd' THEN 'Copying initial data'
+        WHEN sr.srsubstate = 'i' THEN 'Initializing'
+        ELSE 'Check subscription status'
+    END AS status_message
+FROM pg_subscription_rel sr
+JOIN pg_subscription s ON s.oid = sr.subid
+JOIN pg_class c ON c.oid = sr.relid
+JOIN pg_namespace n ON n.oid = c.relnamespace;
+
+-- Logical Replication Publications (Publisher side monitoring)
+CREATE VIEW pg_stat_insights_publications AS
+SELECT 
+    p.pubname AS publication_name,
+    p.oid::int4 AS publication_oid,
+    d.datname AS database,
+    CASE p.puballtables WHEN true THEN 'All tables' ELSE 'Selected tables' END AS scope,
+    CASE p.pubinsert WHEN true THEN 'INSERT' ELSE '' END ||
+    CASE WHEN p.pubinsert AND (p.pubupdate OR p.pubdelete OR p.pubtruncate) THEN ', ' ELSE '' END ||
+    CASE p.pubupdate WHEN true THEN 'UPDATE' ELSE '' END ||
+    CASE WHEN p.pubupdate AND (p.pubdelete OR p.pubtruncate) THEN ', ' ELSE '' END ||
+    CASE p.pubdelete WHEN true THEN 'DELETE' ELSE '' END ||
+    CASE WHEN p.pubdelete AND p.pubtruncate THEN ', ' ELSE '' END ||
+    CASE p.pubtruncate WHEN true THEN 'TRUNCATE' ELSE '' END AS operations,
+    CASE p.pubviaroot WHEN true THEN 'Via root' ELSE 'Direct' END AS partition_mode,
+    (SELECT COUNT(*) FROM pg_publication_tables pt WHERE pt.pubname = p.pubname) AS table_count,
+    (SELECT COUNT(*) FROM pg_replication_slots rs WHERE rs.database = d.datname) AS active_subscribers
+FROM pg_publication p
+JOIN pg_database d ON d.datname = current_database();
+
+-- Replication Origin Tracking (For cascading and bidirectional replication)
+CREATE VIEW pg_stat_insights_replication_origins AS
+SELECT 
+    o.roident::int4 AS origin_id,
+    o.roname AS origin_name,
+    pg_replication_origin_session_is_setup(o.roident) AS session_active,
+    COALESCE(pg_replication_origin_progress(o.roname, false)::text, 'No progress') AS remote_lsn,
+    COALESCE(pg_replication_origin_progress(o.roname, true)::text, 'No progress') AS local_lsn,
+    CASE 
+        WHEN pg_replication_origin_progress(o.roname, false) IS NOT NULL THEN
+            pg_wal_lsn_diff(pg_current_wal_lsn(), pg_replication_origin_progress(o.roname, false))::int8
+        ELSE 0
+    END AS lag_bytes,
+    CASE 
+        WHEN pg_replication_origin_progress(o.roname, false) IS NOT NULL THEN
+            ROUND((pg_wal_lsn_diff(pg_current_wal_lsn(), pg_replication_origin_progress(o.roname, false))::numeric / 1024 / 1024), 2)
+        ELSE 0
+    END AS lag_mb
+FROM pg_replication_origin o;
+
+-- Replication Diagnostics Dashboard (Single comprehensive view)
+CREATE VIEW pg_stat_insights_replication_dashboard AS
+SELECT 
+    'CLUSTER_SUMMARY' AS section,
+    NULL::text AS name,
+    json_build_object(
+        'physical_replicas', (SELECT COUNT(*) FROM pg_stat_replication),
+        'logical_slots', (SELECT COUNT(*) FROM pg_replication_slots WHERE slot_type = 'logical'),
+        'active_subscriptions', (SELECT COUNT(*) FROM pg_subscription WHERE subenabled),
+        'active_publications', (SELECT COUNT(*) FROM pg_publication),
+        'max_lag_seconds', (SELECT ROUND(MAX(EXTRACT(EPOCH FROM replay_lag))::numeric, 2) FROM pg_stat_replication),
+        'critical_alerts', (SELECT COUNT(*) FROM pg_stat_insights_replication_alerts WHERE alert_level LIKE 'CRITICAL%'),
+        'warning_alerts', (SELECT COUNT(*) FROM pg_stat_insights_replication_alerts WHERE alert_level LIKE 'WARNING%')
+    ) AS details
+UNION ALL
+SELECT 
+    'PHYSICAL_REPLICA' AS section,
+    application_name AS name,
+    json_build_object(
+        'client_addr', client_addr,
+        'state', repl_state,
+        'sync_state', sync_state,
+        'health_status', health_status,
+        'replay_lag_mb', replay_lag_mb,
+        'replay_lag_seconds', replay_lag_seconds,
+        'uptime_hours', ROUND((uptime_seconds::numeric / 3600), 1)
+    ) AS details
+FROM pg_stat_insights_physical_replication
+UNION ALL
+SELECT 
+    'LOGICAL_SLOT' AS section,
+    slot_name AS name,
+    json_build_object(
+        'database', database,
+        'plugin', plugin,
+        'active', active,
+        'wal_status', wal_status,
+        'lag_mb', lag_mb,
+        'wal_files_retained', wal_files_retained
+    ) AS details
+FROM pg_stat_insights_logical_replication
+UNION ALL
+SELECT 
+    'ALERT' AS section,
+    identifier AS name,
+    json_build_object(
+        'replication_type', replication_type,
+        'alert_level', alert_level,
+        'lag_mb', lag_mb,
+        'state', state
+    ) AS details
+FROM pg_stat_insights_replication_alerts
+WHERE alert_level NOT LIKE 'OK%'
+ORDER BY section, name;
+
 -- ============================================================================
 -- Helper Views - Performance Analysis
 -- ============================================================================

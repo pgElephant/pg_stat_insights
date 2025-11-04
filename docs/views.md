@@ -1,12 +1,12 @@
 # Views Reference
 
-Complete reference for all 20 pg_stat_insights views with examples and use cases including comprehensive replication monitoring and debugging.
+Complete reference for all 24 pg_stat_insights views with examples and use cases including comprehensive replication monitoring, logical replication subscription/publication tracking, and debugging.
 
 ---
 
 ## Overview
 
-pg_stat_insights provides **20 pre-built views** for instant query performance analysis, replication monitoring, and diagnostics:
+pg_stat_insights provides **24 pre-built views** for instant query performance analysis, replication monitoring (physical & logical), and diagnostics:
 
 | View | Purpose | Typical Use Case |
 |------|---------|------------------|
@@ -32,6 +32,11 @@ pg_stat_insights provides **20 pre-built views** for instant query performance a
 | `pg_stat_insights_replication_health` | Health diagnostics | Comprehensive health check |
 | `pg_stat_insights_replication_performance` | Performance trends | Throughput and lag trends |
 | `pg_stat_insights_replication_timeline` | Timeline analysis | Historical lag patterns |
+| `pg_stat_insights_subscriptions` | Subscription monitoring | Logical replication subscriptions |
+| `pg_stat_insights_subscription_stats` | Subscription details | Per-table sync status |
+| `pg_stat_insights_publications` | Publication monitoring | Publisher configuration |
+| `pg_stat_insights_replication_origins` | Origin tracking | Cascading/bidirectional replication |
+| `pg_stat_insights_replication_dashboard` | Unified dashboard | JSON comprehensive view |
 
 ---
 
@@ -1132,5 +1137,269 @@ FROM pg_stat_insights_replication_performance;
 -- Analyze WAL retention
 SELECT wal_files_count, wal_total_size_mb, wal_retained_mb
 FROM pg_stat_insights_replication_wal;
+```
+
+
+---
+
+## Logical Replication Monitoring
+
+### `pg_stat_insights_subscriptions`
+
+**Monitor logical replication subscriptions on subscriber side**
+
+```sql
+SELECT * FROM pg_stat_insights_subscriptions;
+```
+
+**Columns:**
+
+- `subscription_name` - Subscription identifier
+- `subscription_oid` - Subscription object ID
+- `database` - Target database
+- `status` - enabled or disabled
+- `connection_info` - Publisher connection string
+- `slot_name` - Replication slot on publisher
+- `sync_commit` - Synchronous commit mode
+- `publications` - Array of publication names
+- `health_status` - Active, Subscription disabled, No replication slot
+- `recommendation` - Actionable advice if issues detected
+
+**Example: Check subscription health**
+
+```sql
+SELECT 
+    subscription_name,
+    status,
+    slot_name,
+    publications,
+    health_status,
+    recommendation
+FROM pg_stat_insights_subscriptions
+ORDER BY 
+    CASE health_status
+        WHEN 'Active' THEN 3
+        WHEN 'No replication slot' THEN 2
+        ELSE 1
+    END;
+```
+
+### `pg_stat_insights_subscription_stats`
+
+**Per-table subscription synchronization status**
+
+```sql
+SELECT * FROM pg_stat_insights_subscription_stats;
+```
+
+**Columns:**
+
+- `subid` - Subscription ID
+- `subscription_name` - Subscription name
+- `relid` - Table OID
+- `table_name` - Fully qualified table name (schema.table)
+- `sync_state` - Current sync state code (i,d,s,r)
+- `subscription_lsn` - LSN of subscription
+- `sync_state_description` - Initialize, Data copy, Synchronized, Ready, Unknown
+- `status_message` - Human-readable status
+
+**Sync States:**
+
+- **i (Initialize)** - Initial state before copying
+- **d (Data copy)** - Currently copying initial data
+- **s (Synchronized)** - Fully synchronized with publisher
+- **r (Ready)** - Ready for synchronization
+
+**Example: Monitor table sync progress**
+
+```sql
+SELECT 
+    subscription_name,
+    table_name,
+    sync_state_description,
+    status_message
+FROM pg_stat_insights_subscription_stats
+WHERE sync_state != 's'
+ORDER BY subscription_name, table_name;
+```
+
+### `pg_stat_insights_publications`
+
+**Monitor logical replication publications on publisher side**
+
+```sql
+SELECT * FROM pg_stat_insights_publications;
+```
+
+**Columns:**
+
+- `publication_name` - Publication identifier
+- `publication_oid` - Publication object ID
+- `database` - Publisher database
+- `scope` - "All tables" or "Selected tables"
+- `operations` - Comma-separated list: INSERT, UPDATE, DELETE, TRUNCATE
+- `partition_mode` - "Via root" or "Direct"
+- `table_count` - Number of tables in publication
+- `active_subscribers` - Number of active replication slots
+
+**Example: Monitor publications and subscribers**
+
+```sql
+SELECT 
+    publication_name,
+    scope,
+    operations,
+    table_count,
+    active_subscribers,
+    CASE
+        WHEN active_subscribers = 0 THEN 'No active subscribers'
+        WHEN active_subscribers > 0 THEN 'Publishing to ' || active_subscribers || ' subscriber(s)'
+    END AS status
+FROM pg_stat_insights_publications
+ORDER BY active_subscribers DESC;
+```
+
+### `pg_stat_insights_replication_origins`
+
+**Track replication origins for cascading and bidirectional replication**
+
+```sql
+SELECT * FROM pg_stat_insights_replication_origins;
+```
+
+**Columns:**
+
+- `origin_id` - Origin identifier
+- `origin_name` - Origin name
+- `session_active` - Whether origin session is currently active
+- `remote_lsn` - Last LSN received from remote
+- `local_lsn` - Last LSN applied locally
+- `lag_bytes` - Replication lag in bytes
+- `lag_mb` - Replication lag in megabytes
+
+**Use Cases:**
+
+- Cascading replication (replica replicating to another replica)
+- Bidirectional replication (multi-master)
+- Conflict detection in multi-origin setups
+- Lag monitoring across replication topology
+
+**Example: Monitor cascading replication**
+
+```sql
+SELECT 
+    origin_name,
+    session_active,
+    remote_lsn,
+    local_lsn,
+    lag_mb,
+    CASE
+        WHEN lag_mb > 1000 THEN 'CRITICAL: Lag > 1GB'
+        WHEN lag_mb > 100 THEN 'WARNING: Lag > 100MB'
+        WHEN lag_mb > 0 THEN 'OK: ' || lag_mb || ' MB behind'
+        ELSE 'OK: Fully synchronized'
+    END AS status
+FROM pg_stat_insights_replication_origins
+ORDER BY lag_mb DESC;
+```
+
+### `pg_stat_insights_replication_dashboard`
+
+**Unified JSON dashboard for comprehensive replication monitoring**
+
+```sql
+SELECT * FROM pg_stat_insights_replication_dashboard;
+```
+
+**Structure:**
+
+The dashboard view organizes replication data into sections with JSON details:
+
+- **CLUSTER_SUMMARY** - Overall cluster statistics
+  - physical_replicas, logical_slots, active_subscriptions
+  - active_publications, max_lag_seconds
+  - critical_alerts, warning_alerts
+
+- **PHYSICAL_REPLICA** - One row per physical replica
+  - client_addr, state, sync_state, health_status
+  - replay_lag_mb, replay_lag_seconds, uptime_hours
+
+- **LOGICAL_SLOT** - One row per logical replication slot
+  - database, plugin, active, wal_status
+  - lag_mb, wal_files_retained
+
+- **ALERT** - One row per active alert
+  - replication_type, alert_level, lag_mb, state
+
+**Example: Get comprehensive dashboard view**
+
+```sql
+-- Full dashboard
+SELECT 
+    section,
+    name,
+    jsonb_pretty(details::jsonb) AS details
+FROM pg_stat_insights_replication_dashboard
+ORDER BY section, name;
+
+-- Just cluster summary
+SELECT details 
+FROM pg_stat_insights_replication_dashboard 
+WHERE section = 'CLUSTER_SUMMARY';
+
+-- Only alerts
+SELECT name, details->>'alert_level' AS alert, details->>'lag_mb' AS lag_mb
+FROM pg_stat_insights_replication_dashboard 
+WHERE section = 'ALERT'
+ORDER BY details->>'alert_level';
+```
+
+**Example: Export to monitoring system**
+
+```sql
+-- Export full replication status as JSON for Grafana/Prometheus
+SELECT json_agg(
+    json_build_object(
+        'section', section,
+        'name', name,
+        'details', details
+    )
+) AS replication_status
+FROM pg_stat_insights_replication_dashboard;
+```
+
+---
+
+## Complete Replication Monitoring Workflow
+
+**Production-ready monitoring queries:**
+
+```sql
+-- Daily Health Check
+SELECT * FROM pg_stat_insights_replication_summary;
+SELECT * FROM pg_stat_insights_replication_alerts WHERE alert_level != 'OK';
+
+-- Investigate Issues
+SELECT * FROM pg_stat_insights_replication_bottlenecks WHERE bottleneck_type != 'No bottleneck detected';
+SELECT * FROM pg_stat_insights_replication_health WHERE overall_health != 'OK';
+
+-- Logical Replication Status
+SELECT * FROM pg_stat_insights_subscriptions;
+SELECT * FROM pg_stat_insights_subscription_stats WHERE sync_state != 's';
+SELECT * FROM pg_stat_insights_publications;
+
+-- Performance Analysis
+SELECT * FROM pg_stat_insights_replication_performance;
+SELECT * FROM pg_stat_insights_replication_timeline ORDER BY replay_lag_seconds DESC LIMIT 10;
+
+-- WAL & Capacity Planning
+SELECT * FROM pg_stat_insights_replication_wal;
+SELECT * FROM pg_stat_insights_replication_conflicts;
+
+-- Cascading & Multi-Origin
+SELECT * FROM pg_stat_insights_replication_origins;
+
+-- Dashboard Export
+SELECT * FROM pg_stat_insights_replication_dashboard;
 ```
 
