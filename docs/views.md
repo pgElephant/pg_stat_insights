@@ -1,12 +1,12 @@
 # Views Reference
 
-Complete reference for all 15 pg_stat_insights views with examples and use cases including enhanced replication monitoring.
+Complete reference for all 20 pg_stat_insights views with examples and use cases including comprehensive replication monitoring and debugging.
 
 ---
 
 ## Overview
 
-pg_stat_insights provides **15 pre-built views** for instant query performance analysis and replication monitoring:
+pg_stat_insights provides **20 pre-built views** for instant query performance analysis, replication monitoring, and diagnostics:
 
 | View | Purpose | Typical Use Case |
 |------|---------|------------------|
@@ -25,6 +25,13 @@ pg_stat_insights provides **15 pre-built views** for instant query performance a
 | `pg_stat_insights_logical_replication` | Logical replication slots | Logical replication lag tracking |
 | `pg_stat_insights_replication_slots` | All replication slots | Slot health and WAL retention |
 | `pg_stat_insights_replication_summary` | Replication overview | Cluster-wide replication status |
+| `pg_stat_insights_replication_alerts` | Critical alerts | Lag/WAL loss/inactive detection |
+| `pg_stat_insights_replication_wal` | WAL statistics | WAL retention and sizing |
+| `pg_stat_insights_replication_bottlenecks` | Bottleneck detection | Network/I/O/replay analysis |
+| `pg_stat_insights_replication_conflicts` | Conflict detection | Logical replication conflicts |
+| `pg_stat_insights_replication_health` | Health diagnostics | Comprehensive health check |
+| `pg_stat_insights_replication_performance` | Performance trends | Throughput and lag trends |
+| `pg_stat_insights_replication_timeline` | Timeline analysis | Historical lag patterns |
 
 ---
 
@@ -785,5 +792,345 @@ SELECT
     sync_replicas,
     ROUND((max_replay_lag_bytes::numeric / 1024 / 1024), 2) AS max_lag_mb
 FROM pg_stat_insights_replication_summary;
+```
+
+
+### `pg_stat_insights_replication_alerts`
+
+**Critical alert detection for replication issues**
+
+```sql
+SELECT * FROM pg_stat_insights_replication_alerts
+WHERE alert_level LIKE 'CRITICAL%' OR alert_level LIKE 'WARNING%';
+```
+
+**Columns:**
+
+- `replication_type` - PHYSICAL or LOGICAL
+- `identifier` - application_name (physical) or slot_name (logical)
+- `source` - client_addr (physical) or database (logical)
+- `alert_level` - OK, INFO, WARNING, CRITICAL with description
+- `lag_seconds` - Time lag (physical only)
+- `lag_mb` - Space lag in megabytes
+- `state` - Current replication state
+- `sync_state` - Synchronization state or plugin name
+- `last_message_age_seconds` - Seconds since last message (physical only)
+
+**Alert Thresholds:**
+
+Physical Replication:
+- CRITICAL: Not streaming or lag > 5 minutes
+- WARNING: Lag > 1 minute
+- INFO: Lag > 10 seconds
+
+Logical Replication:
+- CRITICAL: WAL lost or lag > 1GB
+- WARNING: Inactive or WAL unreserved or lag > 100MB
+
+**Example: Get all critical alerts**
+
+```sql
+SELECT 
+    replication_type,
+    identifier,
+    alert_level,
+    lag_mb,
+    state
+FROM pg_stat_insights_replication_alerts
+WHERE alert_level NOT LIKE 'OK%'
+ORDER BY 
+    CASE 
+        WHEN alert_level LIKE 'CRITICAL%' THEN 1
+        WHEN alert_level LIKE 'WARNING%' THEN 2
+        ELSE 3
+    END,
+    lag_mb DESC NULLS LAST;
+```
+
+### `pg_stat_insights_replication_wal`
+
+**Detailed WAL statistics and retention analysis**
+
+```sql
+SELECT * FROM pg_stat_insights_replication_wal;
+```
+
+**Columns:**
+
+- `current_wal_lsn` - Current WAL write position
+- `current_wal_insert_lsn` - Current WAL insert position
+- `total_wal_generated_bytes` - Total WAL generated since cluster init
+- `total_wal_generated_gb` - Total WAL in gigabytes
+- `wal_files_count` - Number of WAL segment files
+- `wal_total_size_bytes` - Total size of all WAL files
+- `wal_total_size_mb` - Total WAL size in megabytes
+- `wal_keep_size` - wal_keep_size setting
+- `max_wal_size` - max_wal_size setting
+- `min_wal_size` - min_wal_size setting
+- `oldest_slot_lsn` - Oldest LSN required by any slot
+- `wal_retained_mb` - WAL retained for replication slots
+
+**Example: Check WAL retention**
+
+```sql
+SELECT 
+    wal_files_count,
+    wal_total_size_mb,
+    wal_retained_mb,
+    wal_keep_size,
+    CASE
+        WHEN wal_retained_mb::numeric > wal_keep_size::numeric THEN 'WARNING: Exceeding wal_keep_size'
+        WHEN wal_total_size_mb > 10000 THEN 'WARNING: WAL directory > 10GB'
+        ELSE 'OK'
+    END AS status
+FROM pg_stat_insights_replication_wal;
+```
+
+### `pg_stat_insights_replication_bottlenecks`
+
+**Identify replication bottlenecks (network, I/O, or replay)**
+
+```sql
+SELECT * FROM pg_stat_insights_replication_bottlenecks;
+```
+
+**Columns:**
+
+- `application_name` - Replica identifier
+- `client_addr` - Replica address
+- `state` - Replication state
+- `sync_state` - Synchronization state
+- `bottleneck_type` - Type of bottleneck detected or "No bottleneck detected"
+- `write_lag_bytes`, `flush_lag_bytes`, `replay_lag_bytes` - Lag at each stage
+- `write_lag_sec`, `flush_lag_sec`, `replay_lag_sec` - Time lag at each stage
+- `last_msg_age_sec` - Seconds since last heartbeat
+- `backend_xmin` - Transaction horizon
+- `connection_age_sec` - Connection duration
+
+**Bottleneck Types:**
+
+- **Network bottleneck** - Slow write phase (network transfer)
+- **Disk I/O bottleneck** - Slow flush phase (disk writes)
+- **Replay bottleneck** - Slow apply phase (query execution on replica)
+- **High lag** - General lag without specific bottleneck
+- **Not streaming** - Connection or configuration issue
+
+**Example: Diagnose replication bottlenecks**
+
+```sql
+SELECT 
+    application_name,
+    bottleneck_type,
+    write_lag_sec,
+    flush_lag_sec,
+    replay_lag_sec,
+    ROUND((write_lag_bytes::numeric / 1024 / 1024), 2) AS write_lag_mb,
+    ROUND((flush_lag_bytes::numeric / 1024 / 1024), 2) AS flush_lag_mb,
+    ROUND((replay_lag_bytes::numeric / 1024 / 1024), 2) AS replay_lag_mb
+FROM pg_stat_insights_replication_bottlenecks
+WHERE bottleneck_type != 'No bottleneck detected';
+```
+
+### `pg_stat_insights_replication_conflicts`
+
+**Logical replication conflict and WAL status monitoring**
+
+```sql
+SELECT * FROM pg_stat_insights_replication_conflicts;
+```
+
+**Columns:**
+
+- `slot_name` - Logical slot identifier
+- `database` - Target database
+- `plugin` - Decoding plugin
+- `conflicting` - Has unresolved conflicts
+- `wal_status` - WAL availability (reserved, lost, unreserved)
+- `conflict_status` - Human-readable status with severity
+- `active` - Slot currently in use
+- `xmin`, `catalog_xmin` - Transaction horizons
+- `lag_bytes`, `lag_mb` - Current lag
+- `safe_wal_size` - Bytes until WAL limit
+- `wal_safety_status` - WAL safety assessment
+- `wal_files_held` - Number of WAL segments retained
+
+**Example: Find slots with conflicts or WAL issues**
+
+```sql
+SELECT 
+    slot_name,
+    database,
+    conflict_status,
+    wal_safety_status,
+    lag_mb,
+    wal_files_held,
+    active
+FROM pg_stat_insights_replication_conflicts
+WHERE conflict_status != 'OK' OR wal_safety_status != 'OK'
+ORDER BY 
+    CASE conflict_status 
+        WHEN 'CRITICAL: Required WAL segments lost' THEN 1
+        WHEN 'CRITICAL: Exceeding wal_keep_size' THEN 2
+        ELSE 3
+    END;
+```
+
+### `pg_stat_insights_replication_health`
+
+**Comprehensive health check with actionable recommendations**
+
+```sql
+SELECT * FROM pg_stat_insights_replication_health;
+```
+
+**Columns:**
+
+- `slot_name` - Replication slot name
+- `slot_type` - physical or logical
+- `database` - Database name
+- `plugin` - Logical decoding plugin (if logical)
+- `active`, `temporary` - Slot status flags
+- `wal_status` - WAL segment status
+- `overall_health` - OK, WARNING, CRITICAL
+- `issues` - Array of detected issues
+- `lag_bytes`, `lag_mb` - Current lag metrics
+- `wal_files_held` - WAL segments retained
+- `safe_wal_size`, `safe_wal_size_mb` - Safe WAL space remaining
+- `recommendation` - Actionable advice for fixing issues
+
+**Example: Get health report with recommendations**
+
+```sql
+SELECT 
+    slot_name,
+    slot_type,
+    overall_health,
+    lag_mb,
+    wal_files_held,
+    issues,
+    recommendation
+FROM pg_stat_insights_replication_health
+WHERE overall_health != 'OK'
+ORDER BY 
+    CASE overall_health 
+        WHEN 'CRITICAL' THEN 1
+        WHEN 'WARNING' THEN 2
+        ELSE 3
+    END;
+```
+
+### `pg_stat_insights_replication_performance`
+
+**Performance trends and replay throughput analysis**
+
+```sql
+SELECT * FROM pg_stat_insights_replication_performance;
+```
+
+**Columns:**
+
+- `application_name`, `client_addr` - Replica identification
+- `state`, `sync_state` - Replication status
+- `sent_lsn`, `replay_lsn` - WAL positions
+- `current_lag_bytes`, `current_lag_mb`, `current_lag_seconds` - Current lag metrics
+- `uptime_seconds` - Connection duration
+- `avg_lag_bytes_per_second` - Average lag accumulation rate
+- `replay_rate_bytes_per_second` - Replay throughput
+- `replay_rate_mb_per_second` - Replay throughput in MB/s
+- `performance_rating` - Excellent, Good, Fair, Poor, Critical
+
+**Performance Ratings:**
+
+- **Excellent** - Lag < 1 second
+- **Good** - Lag < 5 seconds
+- **Fair** - Lag < 30 seconds
+- **Poor** - Lag < 5 minutes
+- **Critical** - Lag > 5 minutes
+
+**Example: Analyze replication performance**
+
+```sql
+SELECT 
+    application_name,
+    performance_rating,
+    current_lag_seconds,
+    replay_rate_mb_per_second,
+    avg_lag_bytes_per_second,
+    ROUND((uptime_seconds::numeric / 3600), 1) AS uptime_hours
+FROM pg_stat_insights_replication_performance
+ORDER BY current_lag_seconds DESC;
+```
+
+### `pg_stat_insights_replication_timeline`
+
+**Historical timeline analysis with lag trends**
+
+```sql
+SELECT * FROM pg_stat_insights_replication_timeline;
+```
+
+**Columns:**
+
+- `application_name`, `client_addr` - Replica identification
+- `backend_start` - When connection started
+- `connected_for_seconds`, `connected_for_hours` - Connection duration
+- `sent_lsn`, `replay_lsn` - WAL positions
+- `replay_lag_bytes`, `replay_lag_mb`, `replay_lag_seconds` - Current lag
+- `avg_lag_mb_per_hour` - Average lag accumulation rate
+- `replay_throughput_kb_per_sec` - Replay speed
+- `reply_time` - Last heartbeat time
+- `heartbeat_age_seconds` - Time since last heartbeat
+- `status_message` - Human-readable status with severity
+
+**Example: Identify lagging replicas over time**
+
+```sql
+SELECT 
+    application_name,
+    connected_for_hours,
+    replay_lag_seconds,
+    avg_lag_mb_per_hour,
+    replay_throughput_kb_per_sec,
+    status_message
+FROM pg_stat_insights_replication_timeline
+ORDER BY replay_lag_seconds DESC;
+```
+
+---
+
+## Replication Monitoring Quick Reference
+
+**Quick diagnostics for common scenarios:**
+
+```sql
+-- Check overall cluster replication health
+SELECT * FROM pg_stat_insights_replication_summary;
+
+-- Find all current alerts
+SELECT * FROM pg_stat_insights_replication_alerts
+WHERE alert_level != 'OK';
+
+-- Identify bottlenecks
+SELECT application_name, bottleneck_type
+FROM pg_stat_insights_replication_bottlenecks
+WHERE bottleneck_type != 'No bottleneck detected';
+
+-- Check logical replication conflicts
+SELECT slot_name, conflict_status, lag_mb
+FROM pg_stat_insights_replication_conflicts
+WHERE conflict_status != 'OK';
+
+-- Get health recommendations
+SELECT slot_name, overall_health, recommendation
+FROM pg_stat_insights_replication_health
+WHERE recommendation IS NOT NULL;
+
+-- Monitor performance trends
+SELECT application_name, performance_rating, replay_rate_mb_per_second
+FROM pg_stat_insights_replication_performance;
+
+-- Analyze WAL retention
+SELECT wal_files_count, wal_total_size_mb, wal_retained_mb
+FROM pg_stat_insights_replication_wal;
 ```
 

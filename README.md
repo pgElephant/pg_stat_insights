@@ -21,7 +21,7 @@
 [![Metrics](https://img.shields.io/badge/metrics-52_columns-brightgreen.svg)]()
 [![Documentation](https://img.shields.io/badge/docs-github.io-blue.svg)](https://pgelephant.github.io/pg_stat_insights/)
 
-![52 Columns and 15 Views](https://img.shields.io/badge/52_Columns-15_Views-success?style=for-the-badge)
+![52 Columns and 20 Views](https://img.shields.io/badge/52_Columns-20_Views-success?style=for-the-badge)
 
 </div>
 
@@ -31,7 +31,7 @@
 
 **PostgreSQL Query Performance Monitoring Made Simple**
 
-`pg_stat_insights` is an advanced PostgreSQL extension for **database performance monitoring**, **query optimization**, and **SQL analytics**. Track and analyze **52 comprehensive metrics** across **15 pre-built views** to identify slow queries, optimize cache performance, monitor replication health, and analyze database performance in real-time.
+`pg_stat_insights` is an advanced PostgreSQL extension for **database performance monitoring**, **query optimization**, and **SQL analytics**. Track and analyze **52 comprehensive metrics** across **20 pre-built views** to identify slow queries, optimize cache performance, monitor replication health, detect bottlenecks, and debug replication issues in real-time.
 
 **Perfect for:**
 - Database Administrators monitoring PostgreSQL performance
@@ -41,7 +41,7 @@
 
 **Key Features:**
 - **52 metric columns** - Execution time, cache hits, WAL generation, JIT stats, buffer I/O
-- **15 pre-built views** - Instant access to top slow queries, cache misses, I/O intensive operations, physical/logical replication monitoring
+- **20 pre-built views** - Instant access to top slow queries, cache misses, I/O intensive operations, comprehensive replication monitoring with bottleneck detection and health diagnostics
 - **11 parameters** - Fine-tune tracking, histograms, and statistics collection
 - **Drop-in replacement** for pg_stat_statements with enhanced metrics
 - **PostgreSQL 16-18** - Full compatibility with PostgreSQL 16, 17, and 18
@@ -93,7 +93,7 @@ LIMIT 10;
 
 - [Getting Started](https://pgelephant.github.io/pg_stat_insights/getting-started/) - Installation and setup
 - [Configuration](https://pgelephant.github.io/pg_stat_insights/configuration/) - All 11 parameters
-- [Views Reference](https://pgelephant.github.io/pg_stat_insights/views/) - All 15 views
+- [Views Reference](https://pgelephant.github.io/pg_stat_insights/views/) - All 20 views
 - [Metrics Guide](https://pgelephant.github.io/pg_stat_insights/metrics/) - All 52 columns
 - [Usage Examples](https://pgelephant.github.io/pg_stat_insights/usage/) - 50+ SQL queries
 - [Prometheus & Grafana](https://pgelephant.github.io/pg_stat_insights/prometheus-grafana/) - Monitoring integration
@@ -126,7 +126,7 @@ psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
 
 ## Views
 
-All 15 pre-built views:
+All 20 pre-built views:
 
 | View | Purpose |
 |------|---------|
@@ -145,6 +145,13 @@ All 15 pre-built views:
 | `pg_stat_insights_logical_replication` | Logical replication slots with lag tracking |
 | `pg_stat_insights_replication_slots` | All replication slots (physical + logical) with health status |
 | `pg_stat_insights_replication_summary` | Overall replication activity summary |
+| `pg_stat_insights_replication_alerts` | Critical alerts for lag, WAL loss, and inactive slots |
+| `pg_stat_insights_replication_wal` | WAL statistics and retention analysis |
+| `pg_stat_insights_replication_bottlenecks` | Identify network, I/O, or replay bottlenecks |
+| `pg_stat_insights_replication_conflicts` | Logical replication conflict detection |
+| `pg_stat_insights_replication_health` | Comprehensive health check with recommendations |
+| `pg_stat_insights_replication_performance` | Performance trends and throughput analysis |
+| `pg_stat_insights_replication_timeline` | Historical timeline and lag trends |
 
 **Complete reference:** [Views Documentation](https://pgelephant.github.io/pg_stat_insights/views/)
 
@@ -184,7 +191,7 @@ All 15 pre-built views:
 **Comprehensive TAP Test Suite for Quality Assurance:**
 - **16 test files** covering all extension functionality
 - **150 test cases** with 100% code coverage
-- Tests all 52 metric columns, 15 views (including 4 replication views), 11 parameters
+- Tests all 52 metric columns, 20 views (including 12 replication diagnostic views), 11 parameters
 - Custom StatsInsightManager.pm framework
 - No external Perl dependencies required
 - Compatible with PostgreSQL 18 testing infrastructure

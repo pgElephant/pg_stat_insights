@@ -248,6 +248,247 @@ SELECT
     (SELECT COUNT(*) FROM pg_stat_replication WHERE sync_state = 'sync') AS sync_replicas,
     (SELECT COUNT(*) FROM pg_stat_replication WHERE sync_state = 'potential') AS potential_sync_replicas;
 
+-- Replication Lag Alerts (Identify problematic replicas and slots)
+CREATE VIEW pg_stat_insights_replication_alerts AS
+SELECT 
+    'PHYSICAL' AS replication_type,
+    application_name AS identifier,
+    client_addr::text AS source,
+    CASE
+        WHEN state != 'streaming' THEN 'CRITICAL: Not streaming'
+        WHEN EXTRACT(EPOCH FROM replay_lag) > 300 THEN 'CRITICAL: Lag > 5 minutes'
+        WHEN EXTRACT(EPOCH FROM replay_lag) > 60 THEN 'WARNING: Lag > 1 minute'
+        WHEN EXTRACT(EPOCH FROM replay_lag) > 10 THEN 'INFO: Lag > 10 seconds'
+        ELSE 'OK'
+    END AS alert_level,
+    ROUND(EXTRACT(EPOCH FROM replay_lag)::numeric, 2) AS lag_seconds,
+    ROUND((pg_wal_lsn_diff(sent_lsn, replay_lsn)::numeric / 1024 / 1024), 2) AS lag_mb,
+    state,
+    sync_state,
+    EXTRACT(EPOCH FROM (now() - reply_time))::int8 AS last_message_age_seconds
+FROM pg_stat_replication
+UNION ALL
+SELECT 
+    'LOGICAL' AS replication_type,
+    slot_name AS identifier,
+    database AS source,
+    CASE
+        WHEN NOT active THEN 'WARNING: Inactive'
+        WHEN wal_status = 'lost' THEN 'CRITICAL: WAL lost'
+        WHEN wal_status = 'unreserved' THEN 'WARNING: WAL unreserved'
+        WHEN pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn) > 1073741824 THEN 'CRITICAL: Lag > 1GB'
+        WHEN pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn) > 104857600 THEN 'WARNING: Lag > 100MB'
+        ELSE 'OK'
+    END AS alert_level,
+    NULL::numeric AS lag_seconds,
+    ROUND((pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn)::numeric / 1024 / 1024), 2) AS lag_mb,
+    CASE WHEN active THEN 'active' ELSE 'inactive' END AS state,
+    plugin AS sync_state,
+    NULL::int8 AS last_message_age_seconds
+FROM pg_replication_slots
+WHERE slot_type = 'logical'
+ORDER BY alert_level DESC, lag_mb DESC NULLS LAST;
+
+-- Replication WAL Statistics (Detailed WAL tracking)
+CREATE VIEW pg_stat_insights_replication_wal AS
+SELECT 
+    pg_current_wal_lsn()::text AS current_wal_lsn,
+    pg_current_wal_insert_lsn()::text AS current_wal_insert_lsn,
+    pg_wal_lsn_diff(pg_current_wal_lsn(), '0/0')::int8 AS total_wal_generated_bytes,
+    ROUND((pg_wal_lsn_diff(pg_current_wal_lsn(), '0/0')::numeric / 1024 / 1024 / 1024), 2) AS total_wal_generated_gb,
+    (SELECT COUNT(*) FROM pg_ls_waldir()) AS wal_files_count,
+    (SELECT COALESCE(SUM(size), 0) FROM pg_ls_waldir()) AS wal_total_size_bytes,
+    ROUND((SELECT COALESCE(SUM(size), 0)::numeric FROM pg_ls_waldir()) / 1024 / 1024, 2) AS wal_total_size_mb,
+    (SELECT setting FROM pg_settings WHERE name = 'wal_keep_size') AS wal_keep_size,
+    (SELECT setting FROM pg_settings WHERE name = 'max_wal_size') AS max_wal_size,
+    (SELECT setting FROM pg_settings WHERE name = 'min_wal_size') AS min_wal_size,
+    (SELECT MIN(restart_lsn) FROM pg_replication_slots WHERE restart_lsn IS NOT NULL)::text AS oldest_slot_lsn,
+    ROUND((pg_wal_lsn_diff(pg_current_wal_lsn(), 
+           (SELECT MIN(restart_lsn) FROM pg_replication_slots WHERE restart_lsn IS NOT NULL))::numeric / 1024 / 1024), 2) AS wal_retained_mb;
+
+-- Replication Bottleneck Detection
+CREATE VIEW pg_stat_insights_replication_bottlenecks AS
+SELECT 
+    r.application_name,
+    r.client_addr::text,
+    r.state,
+    r.sync_state,
+    CASE
+        WHEN r.state != 'streaming' THEN 'Not streaming - check network/replica'
+        WHEN pg_wal_lsn_diff(r.sent_lsn, r.write_lsn) > pg_wal_lsn_diff(r.write_lsn, r.flush_lsn) 
+             AND pg_wal_lsn_diff(r.sent_lsn, r.write_lsn) > pg_wal_lsn_diff(r.flush_lsn, r.replay_lsn)
+             THEN 'Network bottleneck - slow write'
+        WHEN pg_wal_lsn_diff(r.write_lsn, r.flush_lsn) > pg_wal_lsn_diff(r.sent_lsn, r.write_lsn)
+             AND pg_wal_lsn_diff(r.write_lsn, r.flush_lsn) > pg_wal_lsn_diff(r.flush_lsn, r.replay_lsn)
+             THEN 'Disk I/O bottleneck - slow flush'
+        WHEN pg_wal_lsn_diff(r.flush_lsn, r.replay_lsn) > pg_wal_lsn_diff(r.sent_lsn, r.write_lsn)
+             AND pg_wal_lsn_diff(r.flush_lsn, r.replay_lsn) > pg_wal_lsn_diff(r.write_lsn, r.flush_lsn)
+             THEN 'Replay bottleneck - slow apply'
+        WHEN EXTRACT(EPOCH FROM r.replay_lag) > 30 THEN 'High lag - investigate replica load'
+        ELSE 'No bottleneck detected'
+    END AS bottleneck_type,
+    pg_wal_lsn_diff(r.sent_lsn, r.write_lsn)::int8 AS write_lag_bytes,
+    pg_wal_lsn_diff(r.write_lsn, r.flush_lsn)::int8 AS flush_lag_bytes,
+    pg_wal_lsn_diff(r.flush_lsn, r.replay_lsn)::int8 AS replay_lag_bytes,
+    ROUND(EXTRACT(EPOCH FROM r.write_lag)::numeric, 3) AS write_lag_sec,
+    ROUND(EXTRACT(EPOCH FROM r.flush_lag)::numeric, 3) AS flush_lag_sec,
+    ROUND(EXTRACT(EPOCH FROM r.replay_lag)::numeric, 3) AS replay_lag_sec,
+    ROUND(EXTRACT(EPOCH FROM (now() - r.reply_time))::numeric, 1) AS last_msg_age_sec,
+    r.backend_xmin::text,
+    EXTRACT(EPOCH FROM (now() - r.backend_start))::int8 AS connection_age_sec
+FROM pg_stat_replication r;
+
+-- Replication Conflict Detection (For logical replication)
+CREATE VIEW pg_stat_insights_replication_conflicts AS
+SELECT 
+    s.slot_name,
+    s.database,
+    s.plugin,
+    s.conflicting,
+    s.wal_status,
+    CASE 
+        WHEN s.conflicting THEN 'CONFLICT: Slot has unresolved conflicts'
+        WHEN s.wal_status = 'lost' THEN 'CRITICAL: Required WAL segments lost'
+        WHEN s.wal_status = 'unreserved' THEN 'WARNING: WAL not reserved, may be removed'
+        WHEN NOT s.active AND s.confirmed_flush_lsn IS NOT NULL 
+             AND pg_wal_lsn_diff(pg_current_wal_lsn(), s.confirmed_flush_lsn) > 1073741824
+             THEN 'WARNING: Inactive slot with >1GB lag'
+        ELSE 'OK'
+    END AS conflict_status,
+    s.active,
+    s.xmin::text,
+    s.catalog_xmin::text,
+    pg_wal_lsn_diff(pg_current_wal_lsn(), s.confirmed_flush_lsn)::int8 AS lag_bytes,
+    ROUND((pg_wal_lsn_diff(pg_current_wal_lsn(), s.confirmed_flush_lsn)::numeric / 1024 / 1024), 2) AS lag_mb,
+    s.safe_wal_size,
+    CASE 
+        WHEN s.safe_wal_size < 0 THEN 'CRITICAL: Exceeding wal_keep_size'
+        WHEN s.safe_wal_size < 104857600 THEN 'WARNING: Less than 100MB safe WAL'
+        ELSE 'OK'
+    END AS wal_safety_status,
+    (pg_wal_lsn_diff(pg_current_wal_lsn(), s.restart_lsn)::numeric / 
+     (SELECT setting::numeric FROM pg_settings WHERE name = 'wal_segment_size'))::int4 AS wal_files_held
+FROM pg_replication_slots s
+WHERE s.slot_type = 'logical';
+
+-- Replication Performance Trends (Lag over time estimation)
+CREATE VIEW pg_stat_insights_replication_performance AS
+SELECT 
+    r.application_name,
+    r.client_addr::text,
+    r.state,
+    r.sync_state,
+    r.sent_lsn::text,
+    r.replay_lsn::text,
+    pg_wal_lsn_diff(r.sent_lsn, r.replay_lsn)::int8 AS current_lag_bytes,
+    ROUND((pg_wal_lsn_diff(r.sent_lsn, r.replay_lsn)::numeric / 1024 / 1024), 2) AS current_lag_mb,
+    ROUND(EXTRACT(EPOCH FROM r.replay_lag)::numeric, 2) AS current_lag_seconds,
+    EXTRACT(EPOCH FROM (now() - r.backend_start))::int8 AS uptime_seconds,
+    CASE 
+        WHEN EXTRACT(EPOCH FROM (now() - r.backend_start)) > 0 THEN
+            ROUND((pg_wal_lsn_diff(r.sent_lsn, r.replay_lsn)::numeric / 
+                   EXTRACT(EPOCH FROM (now() - r.backend_start))), 2)
+        ELSE 0
+    END AS avg_lag_bytes_per_second,
+    CASE
+        WHEN EXTRACT(EPOCH FROM r.replay_lag) > 0 THEN
+            ROUND((pg_wal_lsn_diff(r.sent_lsn, r.replay_lsn)::numeric / 
+                   EXTRACT(EPOCH FROM r.replay_lag)), 2)
+        ELSE 0
+    END AS replay_rate_bytes_per_second,
+    ROUND((pg_wal_lsn_diff(r.sent_lsn, r.replay_lsn)::numeric / 
+           EXTRACT(EPOCH FROM r.replay_lag))::numeric / 1024 / 1024, 2) AS replay_rate_mb_per_second,
+    CASE
+        WHEN EXTRACT(EPOCH FROM r.replay_lag) < 1 THEN 'Excellent (<1s)'
+        WHEN EXTRACT(EPOCH FROM r.replay_lag) < 5 THEN 'Good (<5s)'
+        WHEN EXTRACT(EPOCH FROM r.replay_lag) < 30 THEN 'Fair (<30s)'
+        WHEN EXTRACT(EPOCH FROM r.replay_lag) < 300 THEN 'Poor (<5min)'
+        ELSE 'Critical (>5min)'
+    END AS performance_rating
+FROM pg_stat_replication r
+WHERE r.replay_lag IS NOT NULL;
+
+-- Replication Slot Health Check (Comprehensive diagnostics)
+CREATE VIEW pg_stat_insights_replication_health AS
+SELECT 
+    slot_name,
+    slot_type,
+    database,
+    plugin,
+    active,
+    temporary,
+    wal_status,
+    CASE 
+        WHEN wal_status = 'lost' THEN 'CRITICAL'
+        WHEN NOT active AND slot_type = 'logical' THEN 'WARNING'
+        WHEN conflicting THEN 'WARNING'
+        WHEN safe_wal_size < 0 THEN 'CRITICAL'
+        WHEN safe_wal_size < 104857600 THEN 'WARNING'
+        WHEN pg_wal_lsn_diff(pg_current_wal_lsn(), COALESCE(confirmed_flush_lsn, restart_lsn)) > 1073741824 THEN 'WARNING'
+        ELSE 'OK'
+    END AS overall_health,
+    ARRAY[
+        CASE WHEN NOT active THEN 'Slot inactive' ELSE NULL END,
+        CASE WHEN wal_status = 'lost' THEN 'WAL segments lost' ELSE NULL END,
+        CASE WHEN wal_status = 'unreserved' THEN 'WAL not reserved' ELSE NULL END,
+        CASE WHEN conflicting THEN 'Has conflicts' ELSE NULL END,
+        CASE WHEN safe_wal_size < 0 THEN 'Exceeding wal_keep_size' ELSE NULL END,
+        CASE WHEN pg_wal_lsn_diff(pg_current_wal_lsn(), COALESCE(confirmed_flush_lsn, restart_lsn)) > 1073741824 
+             THEN 'Lag exceeds 1GB' ELSE NULL END,
+        CASE WHEN temporary THEN 'Temporary slot' ELSE NULL END
+    ]::text[] AS issues,
+    pg_wal_lsn_diff(pg_current_wal_lsn(), COALESCE(confirmed_flush_lsn, restart_lsn))::int8 AS lag_bytes,
+    ROUND((pg_wal_lsn_diff(pg_current_wal_lsn(), COALESCE(confirmed_flush_lsn, restart_lsn))::numeric / 1024 / 1024), 2) AS lag_mb,
+    (pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)::numeric / 
+     (SELECT setting::numeric FROM pg_settings WHERE name = 'wal_segment_size'))::int4 AS wal_files_held,
+    safe_wal_size,
+    ROUND((safe_wal_size::numeric / 1024 / 1024), 2) AS safe_wal_size_mb,
+    CASE
+        WHEN NOT active THEN 'Activate the subscription or drop the slot'
+        WHEN wal_status = 'lost' THEN 'Rebuild subscription - required WAL lost'
+        WHEN wal_status = 'unreserved' THEN 'Increase wal_keep_size or max_slot_wal_keep_size'
+        WHEN safe_wal_size < 104857600 THEN 'Monitor closely - approaching WAL limit'
+        WHEN lag_mb > 1024 THEN 'Investigate subscriber lag - consider parallel apply'
+        ELSE NULL
+    END AS recommendation
+FROM pg_replication_slots;
+
+-- Replication Timeline Analysis
+CREATE VIEW pg_stat_insights_replication_timeline AS
+SELECT 
+    r.application_name,
+    r.client_addr::text,
+    r.backend_start,
+    EXTRACT(EPOCH FROM (now() - r.backend_start))::int8 AS connected_for_seconds,
+    ROUND((EXTRACT(EPOCH FROM (now() - r.backend_start))::numeric / 3600), 2) AS connected_for_hours,
+    r.sent_lsn::text,
+    r.replay_lsn::text,
+    pg_wal_lsn_diff(r.sent_lsn, r.replay_lsn)::int8 AS replay_lag_bytes,
+    ROUND((pg_wal_lsn_diff(r.sent_lsn, r.replay_lsn)::numeric / 1024 / 1024), 2) AS replay_lag_mb,
+    ROUND(EXTRACT(EPOCH FROM r.replay_lag)::numeric, 2) AS replay_lag_seconds,
+    CASE 
+        WHEN EXTRACT(EPOCH FROM (now() - r.backend_start)) > 0 AND pg_wal_lsn_diff(r.sent_lsn, r.replay_lsn) > 0 THEN
+            ROUND(((pg_wal_lsn_diff(r.sent_lsn, r.replay_lsn)::numeric / 1024 / 1024) / 
+                   (EXTRACT(EPOCH FROM (now() - r.backend_start))::numeric / 3600)), 2)
+        ELSE 0
+    END AS avg_lag_mb_per_hour,
+    CASE
+        WHEN EXTRACT(EPOCH FROM r.replay_lag) > 0 THEN
+            ROUND((pg_wal_lsn_diff(r.sent_lsn, r.replay_lsn)::numeric / 
+                   EXTRACT(EPOCH FROM r.replay_lag)::numeric / 1024), 2)
+        ELSE 0
+    END AS replay_throughput_kb_per_sec,
+    r.reply_time,
+    EXTRACT(EPOCH FROM (now() - r.reply_time))::int8 AS heartbeat_age_seconds,
+    CASE
+        WHEN EXTRACT(EPOCH FROM (now() - r.reply_time)) > 60 THEN 'Replica not responding'
+        WHEN EXTRACT(EPOCH FROM r.replay_lag) > 300 THEN 'Severe lag - investigate immediately'
+        WHEN EXTRACT(EPOCH FROM r.replay_lag) > 60 THEN 'Moderate lag - monitor closely'
+        WHEN EXTRACT(EPOCH FROM r.replay_lag) > 10 THEN 'Minor lag - acceptable'
+        ELSE 'Healthy replication'
+    END AS status_message
+FROM pg_stat_replication r;
+
 -- ============================================================================
 -- Helper Views - Performance Analysis
 -- ============================================================================
