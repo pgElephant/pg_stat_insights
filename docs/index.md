@@ -13,7 +13,7 @@
 
 ## Overview
 
-`pg_stat_insights` is an advanced PostgreSQL extension for **database performance monitoring**, **query optimization**, and **SQL analytics**. Track and analyze **52 comprehensive metrics** across **11 pre-built views** to identify slow queries, optimize cache performance, and monitor database health in real-time.
+`pg_stat_insights` is an advanced PostgreSQL extension for **database performance monitoring**, **query optimization**, and **SQL analytics**. Track and analyze **52 comprehensive metrics** across **15 pre-built views** to identify slow queries, optimize cache performance, monitor replication health, and analyze database performance in real-time.
 
 **Perfect for:**
 
@@ -25,7 +25,7 @@
 ## Key Features
 
 - **52 metric columns** - Execution time, cache hits, WAL generation, JIT stats, buffer I/O
-- **11 pre-built views** - Instant access to top slow queries, cache misses, I/O intensive operations
+- **15 pre-built views** - Instant access to top slow queries, cache misses, I/O intensive operations, physical/logical replication monitoring
 - **11 parameters** - Fine-tune tracking, histograms, and statistics collection
 - **Drop-in replacement** for pg_stat_statements with enhanced metrics
 - **PostgreSQL 16-18** - Full compatibility with PostgreSQL 16, 17, and 18
@@ -105,7 +105,7 @@ ORDER BY wal_bytes DESC;
 - **[Installation Guide](installation.md)** - Complete installation instructions
 - **[Quick Start](quick-start.md)** - Get started in 5 minutes
 - **[Configuration](configuration.md)** - All 11 parameters explained
-- **[Views Reference](views.md)** - All 11 views documented
+- **[Views Reference](views.md)** - All 15 views documented
 - **[Metrics Guide](metrics.md)** - All 52 columns detailed
 - **[Usage Examples](usage.md)** - 50+ SQL queries
 - **[Testing Guide](testing.md)** - 22 regression tests

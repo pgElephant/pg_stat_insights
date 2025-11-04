@@ -1,12 +1,12 @@
 # Views Reference
 
-Complete reference for all 11 pg_stat_insights views with examples and use cases.
+Complete reference for all 15 pg_stat_insights views with examples and use cases including enhanced replication monitoring.
 
 ---
 
 ## Overview
 
-pg_stat_insights provides **11 pre-built views** for instant query performance analysis:
+pg_stat_insights provides **15 pre-built views** for instant query performance analysis and replication monitoring:
 
 | View | Purpose | Typical Use Case |
 |------|---------|------------------|
@@ -20,7 +20,11 @@ pg_stat_insights provides **11 pre-built views** for instant query performance a
 | `pg_stat_insights_plan_errors` | Plan estimation issues | Query optimization |
 | `pg_stat_insights_histogram_summary` | Response time distribution | Performance analysis |
 | `pg_stat_insights_by_bucket` | Time-series aggregation | Trend analysis |
-| `pg_stat_insights_replication` | Replication monitoring | Replication lag tracking |
+| `pg_stat_insights_replication` | Basic replication monitoring | Basic replication lag tracking |
+| `pg_stat_insights_physical_replication` | Physical replication details | Streaming replication health |
+| `pg_stat_insights_logical_replication` | Logical replication slots | Logical replication lag tracking |
+| `pg_stat_insights_replication_slots` | All replication slots | Slot health and WAL retention |
+| `pg_stat_insights_replication_summary` | Replication overview | Cluster-wide replication status |
 
 ---
 
@@ -613,4 +617,173 @@ All views are lightweight and query shared memory directly:
 - **[Metrics Guide](metrics.md)** - Learn about all 52 metrics
 - **[Usage Examples](usage.md)** - 50+ real-world queries
 - **[Quick Start](quick-start.md)** - Start monitoring now
+
+
+---
+
+## Replication Monitoring Views
+
+### `pg_stat_insights_physical_replication`
+
+**Enhanced physical replication monitoring with health status**
+
+```sql
+SELECT * FROM pg_stat_insights_physical_replication;
+```
+
+**Columns:**
+
+- `pid` - Backend process ID
+- `usename` - Replication user name
+- `application_name` - Application identifier
+- `client_addr` - Client IP address
+- `client_hostname` - Client hostname
+- `client_port` - Client port number
+- `backend_start` - Time when this process was started
+- `uptime_seconds` - How long replica has been connected
+- `backend_xmin` - Transaction ID threshold
+- `repl_state` - Current state (streaming, catchup, backup)
+- `sync_state` - Synchronous commit state (async, potential, quorum, sync)
+- `sync_priority` - Priority for synchronous replication
+- `sent_lsn` - Last WAL location sent to replica
+- `write_lsn` - Last WAL location written by replica
+- `flush_lsn` - Last WAL location flushed by replica
+- `replay_lsn` - Last WAL location replayed by replica
+- `write_lag_bytes` - Bytes between sent and write
+- `flush_lag_bytes` - Bytes between sent and flush
+- `replay_lag_bytes` - Bytes between sent and replay
+- `write_lag_mb` - MB lag for write
+- `flush_lag_mb` - MB lag for flush
+- `replay_lag_mb` - MB lag for replay
+- `write_lag_seconds` - Time lag for write
+- `flush_lag_seconds` - Time lag for flush
+- `replay_lag_seconds` - Time lag for replay
+- `reply_time` - Last status update from replica
+- `last_msg_age_seconds` - Seconds since last message
+- `health_status` - HEALTHY, WARNING, CRITICAL, SYNCING, DISCONNECTED
+
+**Example: Monitor replica health**
+
+```sql
+SELECT 
+    application_name,
+    client_addr,
+    replay_lag_mb,
+    replay_lag_seconds,
+    health_status
+FROM pg_stat_insights_physical_replication
+ORDER BY replay_lag_seconds DESC NULLS LAST;
+```
+
+### `pg_stat_insights_logical_replication`
+
+**Logical replication slot monitoring with lag tracking**
+
+```sql
+SELECT * FROM pg_stat_insights_logical_replication;
+```
+
+**Columns:**
+
+- `slot_name` - Replication slot identifier
+- `plugin` - Logical decoding plugin (pgoutput, wal2json, etc.)
+- `slot_type` - Always 'logical'
+- `database` - Database name
+- `active` - Whether slot is actively being used
+- `active_pid` - PID of process using the slot
+- `xmin` - Oldest transaction that slot prevents from being vacuumed
+- `catalog_xmin` - Oldest transaction affecting system catalogs
+- `restart_lsn` - WAL position slot needs to restart from
+- `confirmed_flush_lsn` - WAL position confirmed by subscriber
+- `wal_status` - WAL availability status (reserved, extended, unreserved, lost)
+- `safe_wal_size` - Bytes until wal_keep_size limit
+- `two_phase` - Whether slot supports two-phase commit
+- `lag_bytes` - Bytes of WAL lag
+- `lag_mb` - MB of WAL lag
+- `wal_files_retained` - Number of WAL segment files retained
+
+**Example: Monitor logical replication lag**
+
+```sql
+SELECT 
+    slot_name,
+    database,
+    plugin,
+    active,
+    lag_mb,
+    wal_files_retained,
+    wal_status
+FROM pg_stat_insights_logical_replication
+ORDER BY lag_mb DESC;
+```
+
+### `pg_stat_insights_replication_slots`
+
+**All replication slots (physical + logical) with health monitoring**
+
+```sql
+SELECT * FROM pg_stat_insights_replication_slots;
+```
+
+**Columns:**
+
+- All standard pg_replication_slots columns
+- `lag_bytes` - Total lag in bytes
+- `lag_mb` - Total lag in megabytes
+- `wal_files_retained` - WAL segments being retained
+- `health_status` - HEALTHY, INACTIVE, WARNING, CRITICAL, HIGH_LAG
+
+**Example: Identify problematic slots**
+
+```sql
+SELECT 
+    slot_name,
+    slot_type,
+    database,
+    active,
+    health_status,
+    lag_mb,
+    wal_status
+FROM pg_stat_insights_replication_slots
+WHERE health_status IN ('CRITICAL', 'WARNING', 'HIGH_LAG')
+ORDER BY lag_mb DESC;
+```
+
+### `pg_stat_insights_replication_summary`
+
+**Cluster-wide replication overview**
+
+```sql
+SELECT * FROM pg_stat_insights_replication_summary;
+```
+
+**Columns:**
+
+- `physical_replicas_connected` - Number of streaming replicas
+- `physical_slots_active` - Active physical replication slots
+- `logical_slots_active` - Active logical replication slots
+- `inactive_slots` - Slots not currently in use
+- `slots_with_lost_wal` - Slots that lost required WAL
+- `max_replay_lag_bytes` - Maximum replay lag across all replicas
+- `max_replay_lag_seconds` - Maximum replay lag in seconds
+- `avg_replay_lag_seconds` - Average replay lag in seconds
+- `current_wal_lsn` - Current WAL write position
+- `total_slot_lag_bytes` - Combined lag of all slots
+- `streaming_replicas` - Replicas in streaming state
+- `catchup_replicas` - Replicas catching up
+- `sync_replicas` - Synchronous replicas
+- `potential_sync_replicas` - Potential sync candidates
+
+**Example: Get cluster replication overview**
+
+```sql
+SELECT 
+    physical_replicas_connected,
+    logical_slots_active,
+    max_replay_lag_seconds,
+    streaming_replicas,
+    sync_replicas,
+    ROUND((max_replay_lag_bytes::numeric / 1024 / 1024), 2) AS max_lag_mb
+FROM pg_stat_insights_replication_summary;
+```
 

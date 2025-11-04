@@ -128,6 +128,127 @@ CREATE VIEW pg_stat_insights_replication AS
   SELECT * FROM pg_stat_insights_replication_stats();
 
 -- ============================================================================
+-- Enhanced Replication Views
+-- ============================================================================
+
+-- Logical Replication Slots Statistics
+CREATE VIEW pg_stat_insights_logical_replication AS
+SELECT 
+    s.slot_name,
+    s.plugin,
+    s.slot_type,
+    s.database,
+    s.active,
+    s.active_pid,
+    s.xmin::text,
+    s.catalog_xmin::text,
+    s.restart_lsn::text,
+    s.confirmed_flush_lsn::text,
+    s.wal_status,
+    s.safe_wal_size,
+    s.two_phase,
+    s.conflicting,
+    pg_wal_lsn_diff(pg_current_wal_lsn(), s.confirmed_flush_lsn)::int8 AS lag_bytes,
+    ROUND((pg_wal_lsn_diff(pg_current_wal_lsn(), s.confirmed_flush_lsn)::numeric / 1024 / 1024), 2) AS lag_mb,
+    (pg_wal_lsn_diff(pg_current_wal_lsn(), s.restart_lsn)::numeric / 
+     (SELECT setting::numeric FROM pg_settings WHERE name = 'wal_segment_size'))::int4 AS wal_files_retained
+FROM pg_replication_slots s
+WHERE s.slot_type = 'logical';
+
+-- All Replication Slots (Physical + Logical) with Health Status
+CREATE VIEW pg_stat_insights_replication_slots AS
+SELECT 
+    slot_name,
+    plugin,
+    slot_type,
+    database,
+    temporary,
+    active,
+    active_pid,
+    xmin::text,
+    catalog_xmin::text,
+    restart_lsn::text,
+    confirmed_flush_lsn::text,
+    wal_status,
+    safe_wal_size,
+    two_phase,
+    conflicting,
+    pg_wal_lsn_diff(pg_current_wal_lsn(), COALESCE(confirmed_flush_lsn, restart_lsn))::int8 AS lag_bytes,
+    ROUND((pg_wal_lsn_diff(pg_current_wal_lsn(), COALESCE(confirmed_flush_lsn, restart_lsn))::numeric / 1024 / 1024), 2) AS lag_mb,
+    CASE 
+      WHEN restart_lsn IS NOT NULL THEN
+        (pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)::numeric / 
+         (SELECT setting::numeric FROM pg_settings WHERE name = 'wal_segment_size'))::int4
+      ELSE 0
+    END AS wal_files_retained,
+    CASE
+      WHEN NOT active THEN 'INACTIVE'
+      WHEN wal_status = 'lost' THEN 'CRITICAL'
+      WHEN wal_status = 'unreserved' THEN 'WARNING'
+      WHEN lag_bytes > 100000000 THEN 'HIGH_LAG'
+      ELSE 'HEALTHY'
+    END AS health_status
+FROM pg_replication_slots;
+
+-- Physical Replication with Enhanced Metrics
+CREATE VIEW pg_stat_insights_physical_replication AS
+SELECT 
+    r.pid,
+    r.usename::text,
+    r.application_name,
+    r.client_addr::text,
+    r.client_hostname,
+    r.client_port,
+    r.backend_start,
+    EXTRACT(EPOCH FROM (now() - r.backend_start))::int8 AS uptime_seconds,
+    r.backend_xmin::text,
+    r.state AS repl_state,
+    r.sync_state,
+    r.sync_priority,
+    r.sent_lsn::text,
+    r.write_lsn::text,
+    r.flush_lsn::text,
+    r.replay_lsn::text,
+    pg_wal_lsn_diff(r.sent_lsn, r.write_lsn)::int8 AS write_lag_bytes,
+    pg_wal_lsn_diff(r.sent_lsn, r.flush_lsn)::int8 AS flush_lag_bytes,
+    pg_wal_lsn_diff(r.sent_lsn, r.replay_lsn)::int8 AS replay_lag_bytes,
+    ROUND((pg_wal_lsn_diff(r.sent_lsn, r.write_lsn)::numeric / 1024 / 1024), 2) AS write_lag_mb,
+    ROUND((pg_wal_lsn_diff(r.sent_lsn, r.flush_lsn)::numeric / 1024 / 1024), 2) AS flush_lag_mb,
+    ROUND((pg_wal_lsn_diff(r.sent_lsn, r.replay_lsn)::numeric / 1024 / 1024), 2) AS replay_lag_mb,
+    ROUND(EXTRACT(EPOCH FROM r.write_lag)::numeric, 3) AS write_lag_seconds,
+    ROUND(EXTRACT(EPOCH FROM r.flush_lag)::numeric, 3) AS flush_lag_seconds,
+    ROUND(EXTRACT(EPOCH FROM r.replay_lag)::numeric, 3) AS replay_lag_seconds,
+    r.reply_time,
+    EXTRACT(EPOCH FROM (now() - r.reply_time))::int8 AS last_msg_age_seconds,
+    CASE
+      WHEN r.state = 'streaming' AND r.replay_lag IS NOT NULL AND EXTRACT(EPOCH FROM r.replay_lag) < 5 THEN 'HEALTHY'
+      WHEN r.state = 'streaming' AND r.replay_lag IS NOT NULL AND EXTRACT(EPOCH FROM r.replay_lag) < 30 THEN 'WARNING'
+      WHEN r.state = 'streaming' THEN 'CRITICAL'
+      WHEN r.state = 'catchup' THEN 'SYNCING'
+      ELSE 'DISCONNECTED'
+    END AS health_status
+FROM pg_stat_replication r;
+
+-- Replication Summary (Overview of All Replication Activity)
+CREATE VIEW pg_stat_insights_replication_summary AS
+SELECT 
+    (SELECT COUNT(*) FROM pg_stat_replication) AS physical_replicas_connected,
+    (SELECT COUNT(*) FROM pg_replication_slots WHERE slot_type = 'physical' AND active) AS physical_slots_active,
+    (SELECT COUNT(*) FROM pg_replication_slots WHERE slot_type = 'logical' AND active) AS logical_slots_active,
+    (SELECT COUNT(*) FROM pg_replication_slots WHERE NOT active) AS inactive_slots,
+    (SELECT COUNT(*) FROM pg_replication_slots WHERE wal_status = 'lost') AS slots_with_lost_wal,
+    (SELECT MAX(pg_wal_lsn_diff(sent_lsn, replay_lsn)) FROM pg_stat_replication) AS max_replay_lag_bytes,
+    (SELECT ROUND(MAX(EXTRACT(EPOCH FROM replay_lag))::numeric, 2) FROM pg_stat_replication) AS max_replay_lag_seconds,
+    (SELECT ROUND(AVG(EXTRACT(EPOCH FROM replay_lag))::numeric, 2) FROM pg_stat_replication) AS avg_replay_lag_seconds,
+    pg_current_wal_lsn()::text AS current_wal_lsn,
+    (SELECT SUM(pg_wal_lsn_diff(pg_current_wal_lsn(), COALESCE(confirmed_flush_lsn, restart_lsn))) 
+     FROM pg_replication_slots)::int8 AS total_slot_lag_bytes,
+    (SELECT COUNT(*) FROM pg_stat_replication WHERE state = 'streaming') AS streaming_replicas,
+    (SELECT COUNT(*) FROM pg_stat_replication WHERE state = 'catchup') AS catchup_replicas,
+    (SELECT COUNT(*) FROM pg_stat_replication WHERE sync_state = 'sync') AS sync_replicas,
+    (SELECT COUNT(*) FROM pg_stat_replication WHERE sync_state = 'potential') AS potential_sync_replicas;
+
+-- ============================================================================
 -- Helper Views - Performance Analysis
 -- ============================================================================
 

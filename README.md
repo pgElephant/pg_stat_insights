@@ -21,7 +21,7 @@
 [![Metrics](https://img.shields.io/badge/metrics-52_columns-brightgreen.svg)]()
 [![Documentation](https://img.shields.io/badge/docs-github.io-blue.svg)](https://pgelephant.github.io/pg_stat_insights/)
 
-![145 Metrics vs 72 Combined](https://img.shields.io/badge/52_Columns-11_Views-success?style=for-the-badge)
+![52 Columns and 15 Views](https://img.shields.io/badge/52_Columns-15_Views-success?style=for-the-badge)
 
 </div>
 
@@ -31,7 +31,7 @@
 
 **PostgreSQL Query Performance Monitoring Made Simple**
 
-`pg_stat_insights` is an advanced PostgreSQL extension for **database performance monitoring**, **query optimization**, and **SQL analytics**. Track and analyze **52 comprehensive metrics** across **11 pre-built views** to identify slow queries, optimize cache performance, and monitor database health in real-time.
+`pg_stat_insights` is an advanced PostgreSQL extension for **database performance monitoring**, **query optimization**, and **SQL analytics**. Track and analyze **52 comprehensive metrics** across **15 pre-built views** to identify slow queries, optimize cache performance, monitor replication health, and analyze database performance in real-time.
 
 **Perfect for:**
 - Database Administrators monitoring PostgreSQL performance
@@ -41,7 +41,7 @@
 
 **Key Features:**
 - **52 metric columns** - Execution time, cache hits, WAL generation, JIT stats, buffer I/O
-- **11 pre-built views** - Instant access to top slow queries, cache misses, I/O intensive operations
+- **15 pre-built views** - Instant access to top slow queries, cache misses, I/O intensive operations, physical/logical replication monitoring
 - **11 parameters** - Fine-tune tracking, histograms, and statistics collection
 - **Drop-in replacement** for pg_stat_statements with enhanced metrics
 - **PostgreSQL 16-18** - Full compatibility with PostgreSQL 16, 17, and 18
@@ -93,7 +93,7 @@ LIMIT 10;
 
 - [Getting Started](https://pgelephant.github.io/pg_stat_insights/getting-started/) - Installation and setup
 - [Configuration](https://pgelephant.github.io/pg_stat_insights/configuration/) - All 11 parameters
-- [Views Reference](https://pgelephant.github.io/pg_stat_insights/views/) - All 11 views
+- [Views Reference](https://pgelephant.github.io/pg_stat_insights/views/) - All 15 views
 - [Metrics Guide](https://pgelephant.github.io/pg_stat_insights/metrics/) - All 52 columns
 - [Usage Examples](https://pgelephant.github.io/pg_stat_insights/usage/) - 50+ SQL queries
 - [Prometheus & Grafana](https://pgelephant.github.io/pg_stat_insights/prometheus-grafana/) - Monitoring integration
@@ -126,7 +126,7 @@ psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
 
 ## Views
 
-All 11 pre-built views:
+All 15 pre-built views:
 
 | View | Purpose |
 |------|---------|
@@ -140,7 +140,11 @@ All 11 pre-built views:
 | `pg_stat_insights_plan_errors` | Plan estimation issues |
 | `pg_stat_insights_histogram_summary` | Response time distribution |
 | `pg_stat_insights_by_bucket` | Time-series aggregation |
-| `pg_stat_insights_replication` | Replication monitoring |
+| `pg_stat_insights_replication` | Basic replication monitoring |
+| `pg_stat_insights_physical_replication` | Physical replication with enhanced metrics and health status |
+| `pg_stat_insights_logical_replication` | Logical replication slots with lag tracking |
+| `pg_stat_insights_replication_slots` | All replication slots (physical + logical) with health status |
+| `pg_stat_insights_replication_summary` | Overall replication activity summary |
 
 **Complete reference:** [Views Documentation](https://pgelephant.github.io/pg_stat_insights/views/)
 
@@ -180,7 +184,7 @@ All 11 pre-built views:
 **Comprehensive TAP Test Suite for Quality Assurance:**
 - **16 test files** covering all extension functionality
 - **150 test cases** with 100% code coverage
-- Tests all 52 metric columns, 11 views, 11 parameters
+- Tests all 52 metric columns, 15 views (including 4 replication views), 11 parameters
 - Custom StatsInsightManager.pm framework
 - No external Perl dependencies required
 - Compatible with PostgreSQL 18 testing infrastructure
