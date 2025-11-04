@@ -293,7 +293,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: pgraft-${{ matrix.platform }}-pg${{ matrix.pg_version }}
+          name: pg_stat_insights-${{ matrix.platform }}-pg${{ matrix.pg_version }}
           path: ~/release/${{ matrix.platform }}/pg${{ matrix.pg_version }}/*
           retention-days: 30
           if-no-files-found: warn
@@ -337,7 +337,7 @@ jobs:
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: 'pgraft-*'
+          pattern: 'pg_stat_insights-*'
           path: artifacts
       
       - name: Organize release packages
@@ -378,7 +378,7 @@ jobs:
             mkdir -p "$RELEASES_DIR"/{deb,rpm,osx}/{pg13,pg14,pg15,pg16,pg17,pg18}
           fi
           
-          echo "📦 Copying pgraft packages to $RELEASES_DIR (organized by PostgreSQL version)"
+          echo "📦 Copying pg_stat_insights packages to $RELEASES_DIR (organized by PostgreSQL version)"
             
             extract_pg_version() {
               local filename="$1"
@@ -393,7 +393,7 @@ jobs:
                     return
                   fi
                 done
-                if [[ "$filename" =~ pgraft-.*-pg([0-9]+) ]]; then
+                if [[ "$filename" =~ pg_stat_insights-.*-pg([0-9]+) ]]; then
                   echo "${BASH_REMATCH[1]}"
                 else
                   echo ""
@@ -405,9 +405,9 @@ jobs:
             find artifacts -type f | while read artifact_file; do
               filename=$(basename "$artifact_file")
               
-              # Extract from artifact directory name (e.g., pgraft-ubuntu-pg17)
+              # Extract from artifact directory name (e.g., pg_stat_insights-ubuntu-pg17)
               artifact_dir=$(dirname "$artifact_file")
-              if [[ "$artifact_dir" =~ pgraft-([a-z]+)-pg([0-9]+) ]]; then
+              if [[ "$artifact_dir" =~ pg_stat_insights-([a-z]+)-pg([0-9]+) ]]; then
                 platform="${BASH_REMATCH[1]}"
                 pg_version="${BASH_REMATCH[2]}"
                 
@@ -443,7 +443,7 @@ jobs:
             fi
             
             echo ""
-            echo "✅ pgraft packages organized successfully"
+            echo "✅ pg_stat_insights packages organized successfully"
             echo ""
             echo "📂 Package Summary:"
             for pg_ver in 16 17 18; do
@@ -460,13 +460,13 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.inputs.release_tag }}
-          name: pgraft ${{ needs.prepare.outputs.version }}
+          name: pg_stat_insights ${{ needs.prepare.outputs.version }}
           files: |
             release/*
           body: |
-            ## pgraft ${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
+            ## pg_stat_insights ${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
             
-            Raft consensus extension for PostgreSQL.
+            Advanced PostgreSQL performance monitoring extension with 52 metrics across 11 views.
             
             ### 📦 Build Artifacts
             
@@ -491,8 +491,8 @@ jobs:
             
             ### 📚 Documentation
             
-            - **Quick Start**: https://pgelephant.github.io/pgraft/getting-started/quick-start/
-            - **Full Docs**: https://pgelephant.github.io/pgraft/
+            - **Quick Start**: https://pgelephant.github.io/pg_stat_insights/quick-start/
+            - **Full Docs**: https://pgelephant.github.io/pg_stat_insights/
             
             ### ✅ Verification
             
