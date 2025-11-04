@@ -483,11 +483,12 @@ jobs:
             
             ### ✨ Features
             
-            - Raft consensus protocol (etcd-io/raft)
-            - Automatic leader election
-            - Log replication and persistence
-            - Split-brain prevention
-            - etcd-compatible SQL views
+            - 52 comprehensive metrics for query performance analysis
+            - 11 pre-built views for instant insights
+            - Cache efficiency analysis and optimization
+            - WAL generation tracking per query
+            - JIT compilation statistics
+            - PostgreSQL 16-17 compatibility
             
             ### 📚 Documentation
             
