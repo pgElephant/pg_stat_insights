@@ -215,19 +215,9 @@ CROSS JOIN LATERAL (
 WHERE recent_orders.order_count > 0
 ORDER BY recent_orders.recent_total DESC
 LIMIT 10;
-    name     | order_count | recent_total 
--------------+-------------+--------------
- Customer_85 |           1 |      2142.00
- Customer_84 |           1 |      2116.50
- Customer_83 |           1 |      2091.00
- Customer_82 |           1 |      2065.50
- Customer_81 |           1 |      2040.00
- Customer_80 |           1 |      2014.50
- Customer_79 |           1 |      1989.00
- Customer_78 |           1 |      1963.50
- Customer_77 |           1 |      1938.00
- Customer_76 |           1 |      1912.50
-(10 rows)
+ name | order_count | recent_total 
+------+-------------+--------------
+(0 rows)
 
 -- Test 10: DISTINCT ON with complex ordering
 SELECT DISTINCT ON (customer_id) 

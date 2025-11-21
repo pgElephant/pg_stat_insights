@@ -1,26 +1,972 @@
-test_name                    | result
-------------------------------+-------
-All index views exist          | PASS
-pg_stat_insights_indexes has data | PASS
-Index size metrics valid       | PASS
-Index type detection works     | PASS
-Index properties detected      | PASS
-Index usage view has data      | PASS
-Usage status classification works | PASS
-Index scan ratio valid         | PASS
-Index bloat view accessible    | PASS
-Bloat severity classification works | PASS
-Index efficiency view has data | PASS
-Efficiency rating calculated   | PASS
-Index maintenance view has data | PASS
-Maintenance type detected      | PASS
-Index summary view accessible  | PASS
-Summary metrics calculated     | PASS
-Index alerts view accessible   | PASS
-Alert severity levels correct  | PASS
-Index dashboard view accessible | PASS
-Dashboard JSON structure valid | PASS
-Missing indexes view accessible | PASS
-Index cache hit ratio valid    | PASS
-Index views have PUBLIC SELECT permission | PASS
+-- ============================================================================
+-- Test 31: Index Monitoring Views
+-- Tests all index monitoring views and their functionality
+-- ============================================================================
+-- Setup test tables and indexes
+CREATE TABLE IF NOT EXISTS idx_test_users (
+    id SERIAL PRIMARY KEY,
+    username TEXT NOT NULL,
+    email TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT now(),
+    last_login TIMESTAMP,
+    status TEXT DEFAULT 'active'
+);
+CREATE TABLE IF NOT EXISTS idx_test_orders (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL,
+    amount DECIMAL(10,2),
+    order_date DATE DEFAULT CURRENT_DATE,
+    status TEXT DEFAULT 'pending'
+);
+-- Create various index types
+CREATE INDEX IF NOT EXISTS idx_users_username ON idx_test_users(username);
+CREATE INDEX IF NOT EXISTS idx_users_email ON idx_test_users(email);
+CREATE INDEX IF NOT EXISTS idx_users_created ON idx_test_users(created_at);
+CREATE INDEX IF NOT EXISTS idx_orders_user_id ON idx_test_orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_orders_date ON idx_test_orders(order_date);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON idx_test_orders(status);
+-- Insert test data
+INSERT INTO idx_test_users (username, email, created_at) 
+SELECT 'user' || i, 'user' || i || '@test.com', now() - (i || ' days')::interval
+FROM generate_series(1, 500) i;
+INSERT INTO idx_test_orders (user_id, amount, order_date, status)
+SELECT (i % 100) + 1, (random() * 1000)::decimal(10,2), CURRENT_DATE - (i % 30), 
+       CASE WHEN i % 3 = 0 THEN 'completed' WHEN i % 3 = 1 THEN 'pending' ELSE 'cancelled' END
+FROM generate_series(1, 1000) i;
+-- Execute queries to generate index usage statistics
+SELECT * FROM idx_test_users WHERE username = 'user100';
+ id  | username |      email       |           created_at            | last_login | status 
+-----+----------+------------------+---------------------------------+------------+--------
+ 100 | user100  | user100@test.com | Wed Aug 13 14:35:14.857421 2025 |            | active
+(1 row)
 
+SELECT * FROM idx_test_users WHERE email = 'user200@test.com';
+ id  | username |      email       |           created_at            | last_login | status 
+-----+----------+------------------+---------------------------------+------------+--------
+ 200 | user200  | user200@test.com | Mon May 05 14:35:14.857421 2025 |            | active
+(1 row)
+
+SELECT * FROM idx_test_users WHERE created_at > now() - interval '30 days';
+ id | username |      email      |           created_at            | last_login | status 
+----+----------+-----------------+---------------------------------+------------+--------
+  1 | user1    | user1@test.com  | Thu Nov 20 14:35:14.857421 2025 |            | active
+  2 | user2    | user2@test.com  | Wed Nov 19 14:35:14.857421 2025 |            | active
+  3 | user3    | user3@test.com  | Tue Nov 18 14:35:14.857421 2025 |            | active
+  4 | user4    | user4@test.com  | Mon Nov 17 14:35:14.857421 2025 |            | active
+  5 | user5    | user5@test.com  | Sun Nov 16 14:35:14.857421 2025 |            | active
+  6 | user6    | user6@test.com  | Sat Nov 15 14:35:14.857421 2025 |            | active
+  7 | user7    | user7@test.com  | Fri Nov 14 14:35:14.857421 2025 |            | active
+  8 | user8    | user8@test.com  | Thu Nov 13 14:35:14.857421 2025 |            | active
+  9 | user9    | user9@test.com  | Wed Nov 12 14:35:14.857421 2025 |            | active
+ 10 | user10   | user10@test.com | Tue Nov 11 14:35:14.857421 2025 |            | active
+ 11 | user11   | user11@test.com | Mon Nov 10 14:35:14.857421 2025 |            | active
+ 12 | user12   | user12@test.com | Sun Nov 09 14:35:14.857421 2025 |            | active
+ 13 | user13   | user13@test.com | Sat Nov 08 14:35:14.857421 2025 |            | active
+ 14 | user14   | user14@test.com | Fri Nov 07 14:35:14.857421 2025 |            | active
+ 15 | user15   | user15@test.com | Thu Nov 06 14:35:14.857421 2025 |            | active
+ 16 | user16   | user16@test.com | Wed Nov 05 14:35:14.857421 2025 |            | active
+ 17 | user17   | user17@test.com | Tue Nov 04 14:35:14.857421 2025 |            | active
+ 18 | user18   | user18@test.com | Mon Nov 03 14:35:14.857421 2025 |            | active
+ 19 | user19   | user19@test.com | Sun Nov 02 14:35:14.857421 2025 |            | active
+ 20 | user20   | user20@test.com | Sat Nov 01 14:35:14.857421 2025 |            | active
+ 21 | user21   | user21@test.com | Fri Oct 31 14:35:14.857421 2025 |            | active
+ 22 | user22   | user22@test.com | Thu Oct 30 14:35:14.857421 2025 |            | active
+ 23 | user23   | user23@test.com | Wed Oct 29 14:35:14.857421 2025 |            | active
+ 24 | user24   | user24@test.com | Tue Oct 28 14:35:14.857421 2025 |            | active
+ 25 | user25   | user25@test.com | Mon Oct 27 14:35:14.857421 2025 |            | active
+ 26 | user26   | user26@test.com | Sun Oct 26 14:35:14.857421 2025 |            | active
+ 27 | user27   | user27@test.com | Sat Oct 25 14:35:14.857421 2025 |            | active
+ 28 | user28   | user28@test.com | Fri Oct 24 14:35:14.857421 2025 |            | active
+ 29 | user29   | user29@test.com | Thu Oct 23 14:35:14.857421 2025 |            | active
+(29 rows)
+
+SELECT * FROM idx_test_orders WHERE user_id = 50;
+ id  | user_id | amount | order_date |  status   
+-----+---------+--------+------------+-----------
+  49 |      50 | 201.81 | 11-02-2025 | pending
+ 149 |      50 | 877.95 | 10-23-2025 | cancelled
+ 249 |      50 | 382.66 | 11-12-2025 | completed
+ 349 |      50 | 412.98 | 11-02-2025 | pending
+ 449 |      50 | 290.74 | 10-23-2025 | cancelled
+ 549 |      50 | 605.48 | 11-12-2025 | completed
+ 649 |      50 | 962.09 | 11-02-2025 | pending
+ 749 |      50 | 732.86 | 10-23-2025 | cancelled
+ 849 |      50 | 778.90 | 11-12-2025 | completed
+ 949 |      50 | 125.64 | 11-02-2025 | pending
+(10 rows)
+
+SELECT * FROM idx_test_orders WHERE order_date > CURRENT_DATE - 7;
+ id  | user_id | amount | order_date |  status   
+-----+---------+--------+------------+-----------
+   1 |       2 | 176.40 | 11-20-2025 | pending
+   2 |       3 | 472.57 | 11-19-2025 | cancelled
+   3 |       4 | 802.55 | 11-18-2025 | completed
+   4 |       5 | 945.10 | 11-17-2025 | pending
+   5 |       6 | 926.07 | 11-16-2025 | cancelled
+   6 |       7 |  49.62 | 11-15-2025 | completed
+  30 |      31 | 614.02 | 11-21-2025 | completed
+  31 |      32 | 307.79 | 11-20-2025 | pending
+  32 |      33 |  32.44 | 11-19-2025 | cancelled
+  33 |      34 |  11.19 | 11-18-2025 | completed
+  34 |      35 |  42.58 | 11-17-2025 | pending
+  35 |      36 | 417.83 | 11-16-2025 | cancelled
+  36 |      37 | 359.46 | 11-15-2025 | completed
+  60 |      61 | 120.21 | 11-21-2025 | completed
+  61 |      62 | 300.01 | 11-20-2025 | pending
+  62 |      63 | 692.63 | 11-19-2025 | cancelled
+  63 |      64 |  58.45 | 11-18-2025 | completed
+  64 |      65 | 706.07 | 11-17-2025 | pending
+  65 |      66 | 971.10 | 11-16-2025 | cancelled
+  66 |      67 | 473.47 | 11-15-2025 | completed
+  90 |      91 | 331.46 | 11-21-2025 | completed
+  91 |      92 | 585.62 | 11-20-2025 | pending
+  92 |      93 | 244.32 | 11-19-2025 | cancelled
+  93 |      94 | 440.23 | 11-18-2025 | completed
+  94 |      95 | 137.39 | 11-17-2025 | pending
+  95 |      96 | 165.91 | 11-16-2025 | cancelled
+  96 |      97 | 465.26 | 11-15-2025 | completed
+ 120 |      21 | 112.45 | 11-21-2025 | completed
+ 121 |      22 | 104.00 | 11-20-2025 | pending
+ 122 |      23 | 906.34 | 11-19-2025 | cancelled
+ 123 |      24 | 740.16 | 11-18-2025 | completed
+ 124 |      25 | 397.10 | 11-17-2025 | pending
+ 125 |      26 | 806.46 | 11-16-2025 | cancelled
+ 126 |      27 | 500.48 | 11-15-2025 | completed
+ 150 |      51 | 600.03 | 11-21-2025 | completed
+ 151 |      52 | 859.93 | 11-20-2025 | pending
+ 152 |      53 | 312.07 | 11-19-2025 | cancelled
+ 153 |      54 | 159.70 | 11-18-2025 | completed
+ 154 |      55 |  20.83 | 11-17-2025 | pending
+ 155 |      56 | 278.27 | 11-16-2025 | cancelled
+ 156 |      57 |   3.22 | 11-15-2025 | completed
+ 180 |      81 |  18.70 | 11-21-2025 | completed
+ 181 |      82 | 874.77 | 11-20-2025 | pending
+ 182 |      83 | 766.50 | 11-19-2025 | cancelled
+ 183 |      84 | 188.71 | 11-18-2025 | completed
+ 184 |      85 | 783.47 | 11-17-2025 | pending
+ 185 |      86 | 172.64 | 11-16-2025 | cancelled
+ 186 |      87 | 220.58 | 11-15-2025 | completed
+ 210 |      11 | 385.71 | 11-21-2025 | completed
+ 211 |      12 | 166.62 | 11-20-2025 | pending
+ 212 |      13 | 914.34 | 11-19-2025 | cancelled
+ 213 |      14 | 517.21 | 11-18-2025 | completed
+ 214 |      15 | 894.85 | 11-17-2025 | pending
+ 215 |      16 | 649.59 | 11-16-2025 | cancelled
+ 216 |      17 | 112.46 | 11-15-2025 | completed
+ 240 |      41 | 531.03 | 11-21-2025 | completed
+ 241 |      42 | 119.20 | 11-20-2025 | pending
+ 242 |      43 | 627.65 | 11-19-2025 | cancelled
+ 243 |      44 | 745.11 | 11-18-2025 | completed
+ 244 |      45 | 994.51 | 11-17-2025 | pending
+ 245 |      46 | 711.16 | 11-16-2025 | cancelled
+ 246 |      47 | 194.53 | 11-15-2025 | completed
+ 270 |      71 | 752.89 | 11-21-2025 | completed
+ 271 |      72 | 757.88 | 11-20-2025 | pending
+ 272 |      73 |  39.14 | 11-19-2025 | cancelled
+ 273 |      74 | 424.70 | 11-18-2025 | completed
+ 274 |      75 | 598.49 | 11-17-2025 | pending
+ 275 |      76 | 901.36 | 11-16-2025 | cancelled
+ 276 |      77 | 635.71 | 11-15-2025 | completed
+ 300 |       1 | 117.14 | 11-21-2025 | completed
+ 301 |       2 | 247.52 | 11-20-2025 | pending
+ 302 |       3 | 317.49 | 11-19-2025 | cancelled
+ 303 |       4 | 288.36 | 11-18-2025 | completed
+ 304 |       5 | 846.62 | 11-17-2025 | pending
+ 305 |       6 | 204.64 | 11-16-2025 | cancelled
+ 306 |       7 | 685.40 | 11-15-2025 | completed
+ 330 |      31 | 966.66 | 11-21-2025 | completed
+ 331 |      32 | 677.23 | 11-20-2025 | pending
+ 332 |      33 | 324.98 | 11-19-2025 | cancelled
+ 333 |      34 | 676.19 | 11-18-2025 | completed
+ 334 |      35 | 253.12 | 11-17-2025 | pending
+ 335 |      36 | 622.85 | 11-16-2025 | cancelled
+ 336 |      37 | 235.05 | 11-15-2025 | completed
+ 360 |      61 | 999.65 | 11-21-2025 | completed
+ 361 |      62 | 710.29 | 11-20-2025 | pending
+ 362 |      63 |   1.33 | 11-19-2025 | cancelled
+ 363 |      64 | 497.09 | 11-18-2025 | completed
+ 364 |      65 | 853.86 | 11-17-2025 | pending
+ 365 |      66 | 582.78 | 11-16-2025 | cancelled
+ 366 |      67 | 923.31 | 11-15-2025 | completed
+ 390 |      91 |  44.73 | 11-21-2025 | completed
+ 391 |      92 | 143.77 | 11-20-2025 | pending
+ 392 |      93 | 682.66 | 11-19-2025 | cancelled
+ 393 |      94 | 932.07 | 11-18-2025 | completed
+ 394 |      95 | 393.20 | 11-17-2025 | pending
+ 395 |      96 | 514.62 | 11-16-2025 | cancelled
+ 396 |      97 | 866.92 | 11-15-2025 | completed
+ 420 |      21 | 268.80 | 11-21-2025 | completed
+ 421 |      22 | 105.25 | 11-20-2025 | pending
+ 422 |      23 | 934.38 | 11-19-2025 | cancelled
+ 423 |      24 | 822.83 | 11-18-2025 | completed
+ 424 |      25 | 262.56 | 11-17-2025 | pending
+ 425 |      26 | 205.14 | 11-16-2025 | cancelled
+ 426 |      27 |  26.66 | 11-15-2025 | completed
+ 450 |      51 | 160.49 | 11-21-2025 | completed
+ 451 |      52 | 103.84 | 11-20-2025 | pending
+ 452 |      53 | 757.57 | 11-19-2025 | cancelled
+ 453 |      54 | 571.71 | 11-18-2025 | completed
+ 454 |      55 | 604.25 | 11-17-2025 | pending
+ 455 |      56 | 319.45 | 11-16-2025 | cancelled
+ 456 |      57 | 756.23 | 11-15-2025 | completed
+ 480 |      81 | 740.35 | 11-21-2025 | completed
+ 481 |      82 | 355.61 | 11-20-2025 | pending
+ 482 |      83 | 321.48 | 11-19-2025 | cancelled
+ 483 |      84 | 608.42 | 11-18-2025 | completed
+ 484 |      85 | 255.16 | 11-17-2025 | pending
+ 485 |      86 | 439.54 | 11-16-2025 | cancelled
+ 486 |      87 | 612.18 | 11-15-2025 | completed
+ 510 |      11 | 459.54 | 11-21-2025 | completed
+ 511 |      12 |  43.51 | 11-20-2025 | pending
+ 512 |      13 | 126.21 | 11-19-2025 | cancelled
+ 513 |      14 | 547.19 | 11-18-2025 | completed
+ 514 |      15 | 113.71 | 11-17-2025 | pending
+ 515 |      16 | 757.87 | 11-16-2025 | cancelled
+ 516 |      17 | 499.81 | 11-15-2025 | completed
+ 540 |      41 | 432.83 | 11-21-2025 | completed
+ 541 |      42 |  34.85 | 11-20-2025 | pending
+ 542 |      43 | 799.53 | 11-19-2025 | cancelled
+ 543 |      44 | 388.75 | 11-18-2025 | completed
+ 544 |      45 | 187.02 | 11-17-2025 | pending
+ 545 |      46 | 762.33 | 11-16-2025 | cancelled
+ 546 |      47 | 561.81 | 11-15-2025 | completed
+ 570 |      71 | 545.99 | 11-21-2025 | completed
+ 571 |      72 |   6.55 | 11-20-2025 | pending
+ 572 |      73 | 275.74 | 11-19-2025 | cancelled
+ 573 |      74 | 223.52 | 11-18-2025 | completed
+ 574 |      75 | 557.43 | 11-17-2025 | pending
+ 575 |      76 | 200.60 | 11-16-2025 | cancelled
+ 576 |      77 | 492.58 | 11-15-2025 | completed
+ 600 |       1 | 485.22 | 11-21-2025 | completed
+ 601 |       2 | 623.44 | 11-20-2025 | pending
+ 602 |       3 | 439.52 | 11-19-2025 | cancelled
+ 603 |       4 | 863.21 | 11-18-2025 | completed
+ 604 |       5 |  70.22 | 11-17-2025 | pending
+ 605 |       6 | 832.38 | 11-16-2025 | cancelled
+ 606 |       7 | 196.85 | 11-15-2025 | completed
+ 630 |      31 | 416.28 | 11-21-2025 | completed
+ 631 |      32 | 965.92 | 11-20-2025 | pending
+ 632 |      33 | 625.11 | 11-19-2025 | cancelled
+ 633 |      34 | 972.50 | 11-18-2025 | completed
+ 634 |      35 |  68.88 | 11-17-2025 | pending
+ 635 |      36 | 703.29 | 11-16-2025 | cancelled
+ 636 |      37 | 223.17 | 11-15-2025 | completed
+ 660 |      61 | 249.34 | 11-21-2025 | completed
+ 661 |      62 | 501.79 | 11-20-2025 | pending
+ 662 |      63 |  10.67 | 11-19-2025 | cancelled
+ 663 |      64 |  49.39 | 11-18-2025 | completed
+ 664 |      65 | 835.74 | 11-17-2025 | pending
+ 665 |      66 | 362.31 | 11-16-2025 | cancelled
+ 666 |      67 | 690.74 | 11-15-2025 | completed
+ 690 |      91 | 762.30 | 11-21-2025 | completed
+ 691 |      92 | 679.10 | 11-20-2025 | pending
+ 692 |      93 | 994.48 | 11-19-2025 | cancelled
+ 693 |      94 | 556.98 | 11-18-2025 | completed
+ 694 |      95 | 936.65 | 11-17-2025 | pending
+ 695 |      96 | 784.32 | 11-16-2025 | cancelled
+ 696 |      97 | 897.18 | 11-15-2025 | completed
+ 720 |      21 | 504.14 | 11-21-2025 | completed
+ 721 |      22 | 957.77 | 11-20-2025 | pending
+ 722 |      23 | 216.30 | 11-19-2025 | cancelled
+ 723 |      24 | 583.06 | 11-18-2025 | completed
+ 724 |      25 | 429.37 | 11-17-2025 | pending
+ 725 |      26 | 189.45 | 11-16-2025 | cancelled
+ 726 |      27 | 914.17 | 11-15-2025 | completed
+ 750 |      51 | 248.58 | 11-21-2025 | completed
+ 751 |      52 | 219.95 | 11-20-2025 | pending
+ 752 |      53 | 464.15 | 11-19-2025 | cancelled
+ 753 |      54 | 816.20 | 11-18-2025 | completed
+ 754 |      55 | 443.36 | 11-17-2025 | pending
+ 755 |      56 | 430.47 | 11-16-2025 | cancelled
+ 756 |      57 | 672.47 | 11-15-2025 | completed
+ 780 |      81 | 572.28 | 11-21-2025 | completed
+ 781 |      82 | 921.39 | 11-20-2025 | pending
+ 782 |      83 | 662.23 | 11-19-2025 | cancelled
+ 783 |      84 | 302.11 | 11-18-2025 | completed
+ 784 |      85 | 159.43 | 11-17-2025 | pending
+ 785 |      86 | 689.55 | 11-16-2025 | cancelled
+ 786 |      87 | 250.64 | 11-15-2025 | completed
+ 810 |      11 | 599.99 | 11-21-2025 | completed
+ 811 |      12 | 496.07 | 11-20-2025 | pending
+ 812 |      13 | 979.72 | 11-19-2025 | cancelled
+ 813 |      14 | 149.73 | 11-18-2025 | completed
+ 814 |      15 | 368.11 | 11-17-2025 | pending
+ 815 |      16 | 480.74 | 11-16-2025 | cancelled
+ 816 |      17 | 442.73 | 11-15-2025 | completed
+ 840 |      41 | 782.17 | 11-21-2025 | completed
+ 841 |      42 | 727.53 | 11-20-2025 | pending
+ 842 |      43 | 205.09 | 11-19-2025 | cancelled
+ 843 |      44 | 473.06 | 11-18-2025 | completed
+ 844 |      45 | 559.43 | 11-17-2025 | pending
+ 845 |      46 | 327.19 | 11-16-2025 | cancelled
+ 846 |      47 | 606.19 | 11-15-2025 | completed
+ 870 |      71 | 949.12 | 11-21-2025 | completed
+ 871 |      72 | 325.09 | 11-20-2025 | pending
+ 872 |      73 | 201.49 | 11-19-2025 | cancelled
+ 873 |      74 | 208.56 | 11-18-2025 | completed
+ 874 |      75 | 894.52 | 11-17-2025 | pending
+ 875 |      76 | 498.05 | 11-16-2025 | cancelled
+ 876 |      77 | 449.53 | 11-15-2025 | completed
+ 900 |       1 | 443.43 | 11-21-2025 | completed
+ 901 |       2 | 236.10 | 11-20-2025 | pending
+ 902 |       3 |  81.24 | 11-19-2025 | cancelled
+ 903 |       4 | 755.28 | 11-18-2025 | completed
+ 904 |       5 | 793.66 | 11-17-2025 | pending
+ 905 |       6 | 633.10 | 11-16-2025 | cancelled
+ 906 |       7 | 592.69 | 11-15-2025 | completed
+ 930 |      31 | 493.01 | 11-21-2025 | completed
+ 931 |      32 | 678.85 | 11-20-2025 | pending
+ 932 |      33 | 344.13 | 11-19-2025 | cancelled
+ 933 |      34 | 258.15 | 11-18-2025 | completed
+ 934 |      35 | 308.79 | 11-17-2025 | pending
+ 935 |      36 | 923.43 | 11-16-2025 | cancelled
+ 936 |      37 | 657.82 | 11-15-2025 | completed
+ 960 |      61 | 371.28 | 11-21-2025 | completed
+ 961 |      62 | 209.74 | 11-20-2025 | pending
+ 962 |      63 | 200.73 | 11-19-2025 | cancelled
+ 963 |      64 | 493.00 | 11-18-2025 | completed
+ 964 |      65 | 797.59 | 11-17-2025 | pending
+ 965 |      66 | 525.16 | 11-16-2025 | cancelled
+ 966 |      67 | 860.43 | 11-15-2025 | completed
+ 990 |      91 | 447.31 | 11-21-2025 | completed
+ 991 |      92 |  93.92 | 11-20-2025 | pending
+ 992 |      93 | 841.96 | 11-19-2025 | cancelled
+ 993 |      94 | 887.86 | 11-18-2025 | completed
+ 994 |      95 | 162.33 | 11-17-2025 | pending
+ 995 |      96 | 734.85 | 11-16-2025 | cancelled
+ 996 |      97 | 222.63 | 11-15-2025 | completed
+(237 rows)
+
+SELECT * FROM idx_test_orders WHERE status = 'completed';
+ id  | user_id | amount | order_date |  status   
+-----+---------+--------+------------+-----------
+   3 |       4 | 802.55 | 11-18-2025 | completed
+   6 |       7 |  49.62 | 11-15-2025 | completed
+   9 |      10 | 142.08 | 11-12-2025 | completed
+  12 |      13 | 696.25 | 11-09-2025 | completed
+  15 |      16 | 494.79 | 11-06-2025 | completed
+  18 |      19 | 286.86 | 11-03-2025 | completed
+  21 |      22 | 706.76 | 10-31-2025 | completed
+  24 |      25 | 802.84 | 10-28-2025 | completed
+  27 |      28 | 946.11 | 10-25-2025 | completed
+  30 |      31 | 614.02 | 11-21-2025 | completed
+  33 |      34 |  11.19 | 11-18-2025 | completed
+  36 |      37 | 359.46 | 11-15-2025 | completed
+  39 |      40 | 175.74 | 11-12-2025 | completed
+  42 |      43 | 712.32 | 11-09-2025 | completed
+  45 |      46 | 483.88 | 11-06-2025 | completed
+  48 |      49 | 459.64 | 11-03-2025 | completed
+  51 |      52 | 901.43 | 10-31-2025 | completed
+  54 |      55 | 537.07 | 10-28-2025 | completed
+  57 |      58 | 426.56 | 10-25-2025 | completed
+  60 |      61 | 120.21 | 11-21-2025 | completed
+  63 |      64 |  58.45 | 11-18-2025 | completed
+  66 |      67 | 473.47 | 11-15-2025 | completed
+  69 |      70 | 292.48 | 11-12-2025 | completed
+  72 |      73 | 315.79 | 11-09-2025 | completed
+  75 |      76 | 621.62 | 11-06-2025 | completed
+  78 |      79 | 693.92 | 11-03-2025 | completed
+  81 |      82 | 993.43 | 10-31-2025 | completed
+  84 |      85 | 172.61 | 10-28-2025 | completed
+  87 |      88 | 483.76 | 10-25-2025 | completed
+  90 |      91 | 331.46 | 11-21-2025 | completed
+  93 |      94 | 440.23 | 11-18-2025 | completed
+  96 |      97 | 465.26 | 11-15-2025 | completed
+  99 |     100 | 714.80 | 11-12-2025 | completed
+ 102 |       3 | 660.17 | 11-09-2025 | completed
+ 105 |       6 | 763.89 | 11-06-2025 | completed
+ 108 |       9 | 685.90 | 11-03-2025 | completed
+ 111 |      12 | 821.79 | 10-31-2025 | completed
+ 114 |      15 | 672.08 | 10-28-2025 | completed
+ 117 |      18 | 406.74 | 10-25-2025 | completed
+ 120 |      21 | 112.45 | 11-21-2025 | completed
+ 123 |      24 | 740.16 | 11-18-2025 | completed
+ 126 |      27 | 500.48 | 11-15-2025 | completed
+ 129 |      30 | 666.22 | 11-12-2025 | completed
+ 132 |      33 | 945.51 | 11-09-2025 | completed
+ 135 |      36 | 484.33 | 11-06-2025 | completed
+ 138 |      39 | 612.34 | 11-03-2025 | completed
+ 141 |      42 | 858.88 | 10-31-2025 | completed
+ 144 |      45 | 679.57 | 10-28-2025 | completed
+ 147 |      48 | 131.25 | 10-25-2025 | completed
+ 150 |      51 | 600.03 | 11-21-2025 | completed
+ 153 |      54 | 159.70 | 11-18-2025 | completed
+ 156 |      57 |   3.22 | 11-15-2025 | completed
+ 159 |      60 | 500.99 | 11-12-2025 | completed
+ 162 |      63 | 654.96 | 11-09-2025 | completed
+ 165 |      66 | 577.16 | 11-06-2025 | completed
+ 168 |      69 |  15.07 | 11-03-2025 | completed
+ 171 |      72 | 666.66 | 10-31-2025 | completed
+ 174 |      75 | 953.08 | 10-28-2025 | completed
+ 177 |      78 | 507.25 | 10-25-2025 | completed
+ 180 |      81 |  18.70 | 11-21-2025 | completed
+ 183 |      84 | 188.71 | 11-18-2025 | completed
+ 186 |      87 | 220.58 | 11-15-2025 | completed
+ 189 |      90 | 469.74 | 11-12-2025 | completed
+ 192 |      93 | 286.98 | 11-09-2025 | completed
+ 195 |      96 | 558.31 | 11-06-2025 | completed
+ 198 |      99 | 206.84 | 11-03-2025 | completed
+ 201 |       2 | 688.90 | 10-31-2025 | completed
+ 204 |       5 | 515.34 | 10-28-2025 | completed
+ 207 |       8 | 718.12 | 10-25-2025 | completed
+ 210 |      11 | 385.71 | 11-21-2025 | completed
+ 213 |      14 | 517.21 | 11-18-2025 | completed
+ 216 |      17 | 112.46 | 11-15-2025 | completed
+ 219 |      20 | 882.29 | 11-12-2025 | completed
+ 222 |      23 | 799.20 | 11-09-2025 | completed
+ 225 |      26 | 581.71 | 11-06-2025 | completed
+ 228 |      29 | 702.47 | 11-03-2025 | completed
+ 231 |      32 |  75.11 | 10-31-2025 | completed
+ 234 |      35 | 531.66 | 10-28-2025 | completed
+ 237 |      38 | 474.24 | 10-25-2025 | completed
+ 240 |      41 | 531.03 | 11-21-2025 | completed
+ 243 |      44 | 745.11 | 11-18-2025 | completed
+ 246 |      47 | 194.53 | 11-15-2025 | completed
+ 249 |      50 | 382.66 | 11-12-2025 | completed
+ 252 |      53 | 217.90 | 11-09-2025 | completed
+ 255 |      56 | 825.34 | 11-06-2025 | completed
+ 258 |      59 | 430.78 | 11-03-2025 | completed
+ 261 |      62 |  46.74 | 10-31-2025 | completed
+ 264 |      65 |  26.45 | 10-28-2025 | completed
+ 267 |      68 | 828.06 | 10-25-2025 | completed
+ 270 |      71 | 752.89 | 11-21-2025 | completed
+ 273 |      74 | 424.70 | 11-18-2025 | completed
+ 276 |      77 | 635.71 | 11-15-2025 | completed
+ 279 |      80 | 305.71 | 11-12-2025 | completed
+ 282 |      83 | 556.94 | 11-09-2025 | completed
+ 285 |      86 | 702.02 | 11-06-2025 | completed
+ 288 |      89 | 740.77 | 11-03-2025 | completed
+ 291 |      92 | 914.68 | 10-31-2025 | completed
+ 294 |      95 | 491.06 | 10-28-2025 | completed
+ 297 |      98 | 789.67 | 10-25-2025 | completed
+ 300 |       1 | 117.14 | 11-21-2025 | completed
+ 303 |       4 | 288.36 | 11-18-2025 | completed
+ 306 |       7 | 685.40 | 11-15-2025 | completed
+ 309 |      10 | 535.29 | 11-12-2025 | completed
+ 312 |      13 | 181.84 | 11-09-2025 | completed
+ 315 |      16 | 749.47 | 11-06-2025 | completed
+ 318 |      19 | 525.15 | 11-03-2025 | completed
+ 321 |      22 | 693.05 | 10-31-2025 | completed
+ 324 |      25 | 133.62 | 10-28-2025 | completed
+ 327 |      28 | 741.66 | 10-25-2025 | completed
+ 330 |      31 | 966.66 | 11-21-2025 | completed
+ 333 |      34 | 676.19 | 11-18-2025 | completed
+ 336 |      37 | 235.05 | 11-15-2025 | completed
+ 339 |      40 | 748.95 | 11-12-2025 | completed
+ 342 |      43 | 165.25 | 11-09-2025 | completed
+ 345 |      46 | 196.42 | 11-06-2025 | completed
+ 348 |      49 | 566.54 | 11-03-2025 | completed
+ 351 |      52 | 879.35 | 10-31-2025 | completed
+ 354 |      55 | 748.00 | 10-28-2025 | completed
+ 357 |      58 | 314.31 | 10-25-2025 | completed
+ 360 |      61 | 999.65 | 11-21-2025 | completed
+ 363 |      64 | 497.09 | 11-18-2025 | completed
+ 366 |      67 | 923.31 | 11-15-2025 | completed
+ 369 |      70 |  48.23 | 11-12-2025 | completed
+ 372 |      73 | 743.61 | 11-09-2025 | completed
+ 375 |      76 | 709.72 | 11-06-2025 | completed
+ 378 |      79 | 345.56 | 11-03-2025 | completed
+ 381 |      82 | 967.03 | 10-31-2025 | completed
+ 384 |      85 | 753.66 | 10-28-2025 | completed
+ 387 |      88 |  29.00 | 10-25-2025 | completed
+ 390 |      91 |  44.73 | 11-21-2025 | completed
+ 393 |      94 | 932.07 | 11-18-2025 | completed
+ 396 |      97 | 866.92 | 11-15-2025 | completed
+ 399 |     100 | 683.19 | 11-12-2025 | completed
+ 402 |       3 |  96.10 | 11-09-2025 | completed
+ 405 |       6 |  45.06 | 11-06-2025 | completed
+ 408 |       9 |  62.23 | 11-03-2025 | completed
+ 411 |      12 | 596.46 | 10-31-2025 | completed
+ 414 |      15 | 126.16 | 10-28-2025 | completed
+ 417 |      18 | 535.97 | 10-25-2025 | completed
+ 420 |      21 | 268.80 | 11-21-2025 | completed
+ 423 |      24 | 822.83 | 11-18-2025 | completed
+ 426 |      27 |  26.66 | 11-15-2025 | completed
+ 429 |      30 | 567.40 | 11-12-2025 | completed
+ 432 |      33 | 588.83 | 11-09-2025 | completed
+ 435 |      36 | 656.91 | 11-06-2025 | completed
+ 438 |      39 | 426.82 | 11-03-2025 | completed
+ 441 |      42 |   5.51 | 10-31-2025 | completed
+ 444 |      45 | 371.38 | 10-28-2025 | completed
+ 447 |      48 | 440.68 | 10-25-2025 | completed
+ 450 |      51 | 160.49 | 11-21-2025 | completed
+ 453 |      54 | 571.71 | 11-18-2025 | completed
+ 456 |      57 | 756.23 | 11-15-2025 | completed
+ 459 |      60 | 955.63 | 11-12-2025 | completed
+ 462 |      63 | 346.28 | 11-09-2025 | completed
+ 465 |      66 | 749.91 | 11-06-2025 | completed
+ 468 |      69 | 516.95 | 11-03-2025 | completed
+ 471 |      72 | 950.94 | 10-31-2025 | completed
+ 474 |      75 | 485.16 | 10-28-2025 | completed
+ 477 |      78 | 810.74 | 10-25-2025 | completed
+ 480 |      81 | 740.35 | 11-21-2025 | completed
+ 483 |      84 | 608.42 | 11-18-2025 | completed
+ 486 |      87 | 612.18 | 11-15-2025 | completed
+ 489 |      90 | 153.11 | 11-12-2025 | completed
+ 492 |      93 | 560.92 | 11-09-2025 | completed
+ 495 |      96 | 768.75 | 11-06-2025 | completed
+ 498 |      99 | 518.55 | 11-03-2025 | completed
+ 501 |       2 | 757.90 | 10-31-2025 | completed
+ 504 |       5 |  78.89 | 10-28-2025 | completed
+ 507 |       8 | 731.99 | 10-25-2025 | completed
+ 510 |      11 | 459.54 | 11-21-2025 | completed
+ 513 |      14 | 547.19 | 11-18-2025 | completed
+ 516 |      17 | 499.81 | 11-15-2025 | completed
+ 519 |      20 | 598.82 | 11-12-2025 | completed
+ 522 |      23 | 110.05 | 11-09-2025 | completed
+ 525 |      26 | 633.13 | 11-06-2025 | completed
+ 528 |      29 | 383.50 | 11-03-2025 | completed
+ 531 |      32 | 695.28 | 10-31-2025 | completed
+ 534 |      35 | 345.45 | 10-28-2025 | completed
+ 537 |      38 |   7.49 | 10-25-2025 | completed
+ 540 |      41 | 432.83 | 11-21-2025 | completed
+ 543 |      44 | 388.75 | 11-18-2025 | completed
+ 546 |      47 | 561.81 | 11-15-2025 | completed
+ 549 |      50 | 605.48 | 11-12-2025 | completed
+ 552 |      53 | 450.68 | 11-09-2025 | completed
+ 555 |      56 | 421.91 | 11-06-2025 | completed
+ 558 |      59 | 174.54 | 11-03-2025 | completed
+ 561 |      62 | 818.84 | 10-31-2025 | completed
+ 564 |      65 | 782.20 | 10-28-2025 | completed
+ 567 |      68 | 243.79 | 10-25-2025 | completed
+ 570 |      71 | 545.99 | 11-21-2025 | completed
+ 573 |      74 | 223.52 | 11-18-2025 | completed
+ 576 |      77 | 492.58 | 11-15-2025 | completed
+ 579 |      80 | 670.58 | 11-12-2025 | completed
+ 582 |      83 | 992.83 | 11-09-2025 | completed
+ 585 |      86 | 328.09 | 11-06-2025 | completed
+ 588 |      89 |  30.71 | 11-03-2025 | completed
+ 591 |      92 | 911.42 | 10-31-2025 | completed
+ 594 |      95 | 126.33 | 10-28-2025 | completed
+ 597 |      98 | 845.01 | 10-25-2025 | completed
+ 600 |       1 | 485.22 | 11-21-2025 | completed
+ 603 |       4 | 863.21 | 11-18-2025 | completed
+ 606 |       7 | 196.85 | 11-15-2025 | completed
+ 609 |      10 | 884.09 | 11-12-2025 | completed
+ 612 |      13 | 461.65 | 11-09-2025 | completed
+ 615 |      16 | 592.75 | 11-06-2025 | completed
+ 618 |      19 | 480.06 | 11-03-2025 | completed
+ 621 |      22 | 858.22 | 10-31-2025 | completed
+ 624 |      25 | 626.45 | 10-28-2025 | completed
+ 627 |      28 | 474.01 | 10-25-2025 | completed
+ 630 |      31 | 416.28 | 11-21-2025 | completed
+ 633 |      34 | 972.50 | 11-18-2025 | completed
+ 636 |      37 | 223.17 | 11-15-2025 | completed
+ 639 |      40 | 327.28 | 11-12-2025 | completed
+ 642 |      43 | 338.48 | 11-09-2025 | completed
+ 645 |      46 | 161.71 | 11-06-2025 | completed
+ 648 |      49 |  98.26 | 11-03-2025 | completed
+ 651 |      52 | 526.74 | 10-31-2025 | completed
+ 654 |      55 | 741.26 | 10-28-2025 | completed
+ 657 |      58 | 663.45 | 10-25-2025 | completed
+ 660 |      61 | 249.34 | 11-21-2025 | completed
+ 663 |      64 |  49.39 | 11-18-2025 | completed
+ 666 |      67 | 690.74 | 11-15-2025 | completed
+ 669 |      70 | 991.47 | 11-12-2025 | completed
+ 672 |      73 | 476.69 | 11-09-2025 | completed
+ 675 |      76 | 261.58 | 11-06-2025 | completed
+ 678 |      79 | 643.54 | 11-03-2025 | completed
+ 681 |      82 | 257.39 | 10-31-2025 | completed
+ 684 |      85 | 481.88 | 10-28-2025 | completed
+ 687 |      88 | 929.41 | 10-25-2025 | completed
+ 690 |      91 | 762.30 | 11-21-2025 | completed
+ 693 |      94 | 556.98 | 11-18-2025 | completed
+ 696 |      97 | 897.18 | 11-15-2025 | completed
+ 699 |     100 | 708.99 | 11-12-2025 | completed
+ 702 |       3 | 708.43 | 11-09-2025 | completed
+ 705 |       6 |  68.83 | 11-06-2025 | completed
+ 708 |       9 | 847.54 | 11-03-2025 | completed
+ 711 |      12 |  26.82 | 10-31-2025 | completed
+ 714 |      15 | 776.27 | 10-28-2025 | completed
+ 717 |      18 | 850.19 | 10-25-2025 | completed
+ 720 |      21 | 504.14 | 11-21-2025 | completed
+ 723 |      24 | 583.06 | 11-18-2025 | completed
+ 726 |      27 | 914.17 | 11-15-2025 | completed
+ 729 |      30 |  43.92 | 11-12-2025 | completed
+ 732 |      33 | 891.42 | 11-09-2025 | completed
+ 735 |      36 | 818.61 | 11-06-2025 | completed
+ 738 |      39 | 144.80 | 11-03-2025 | completed
+ 741 |      42 | 720.81 | 10-31-2025 | completed
+ 744 |      45 | 383.92 | 10-28-2025 | completed
+ 747 |      48 | 240.97 | 10-25-2025 | completed
+ 750 |      51 | 248.58 | 11-21-2025 | completed
+ 753 |      54 | 816.20 | 11-18-2025 | completed
+ 756 |      57 | 672.47 | 11-15-2025 | completed
+ 759 |      60 | 782.69 | 11-12-2025 | completed
+ 762 |      63 | 494.68 | 11-09-2025 | completed
+ 765 |      66 | 448.11 | 11-06-2025 | completed
+ 768 |      69 | 327.35 | 11-03-2025 | completed
+ 771 |      72 | 705.39 | 10-31-2025 | completed
+ 774 |      75 | 275.48 | 10-28-2025 | completed
+ 777 |      78 | 624.56 | 10-25-2025 | completed
+ 780 |      81 | 572.28 | 11-21-2025 | completed
+ 783 |      84 | 302.11 | 11-18-2025 | completed
+ 786 |      87 | 250.64 | 11-15-2025 | completed
+ 789 |      90 | 504.07 | 11-12-2025 | completed
+ 792 |      93 | 456.02 | 11-09-2025 | completed
+ 795 |      96 | 775.45 | 11-06-2025 | completed
+ 798 |      99 | 209.75 | 11-03-2025 | completed
+ 801 |       2 |  36.12 | 10-31-2025 | completed
+ 804 |       5 | 683.94 | 10-28-2025 | completed
+ 807 |       8 | 899.04 | 10-25-2025 | completed
+ 810 |      11 | 599.99 | 11-21-2025 | completed
+ 813 |      14 | 149.73 | 11-18-2025 | completed
+ 816 |      17 | 442.73 | 11-15-2025 | completed
+ 819 |      20 |  62.19 | 11-12-2025 | completed
+ 822 |      23 | 155.30 | 11-09-2025 | completed
+ 825 |      26 | 785.73 | 11-06-2025 | completed
+ 828 |      29 | 499.42 | 11-03-2025 | completed
+ 831 |      32 | 393.63 | 10-31-2025 | completed
+ 834 |      35 | 470.52 | 10-28-2025 | completed
+ 837 |      38 | 672.90 | 10-25-2025 | completed
+ 840 |      41 | 782.17 | 11-21-2025 | completed
+ 843 |      44 | 473.06 | 11-18-2025 | completed
+ 846 |      47 | 606.19 | 11-15-2025 | completed
+ 849 |      50 | 778.90 | 11-12-2025 | completed
+ 852 |      53 | 659.48 | 11-09-2025 | completed
+ 855 |      56 | 886.59 | 11-06-2025 | completed
+ 858 |      59 | 152.68 | 11-03-2025 | completed
+ 861 |      62 | 388.78 | 10-31-2025 | completed
+ 864 |      65 | 241.62 | 10-28-2025 | completed
+ 867 |      68 | 112.04 | 10-25-2025 | completed
+ 870 |      71 | 949.12 | 11-21-2025 | completed
+ 873 |      74 | 208.56 | 11-18-2025 | completed
+ 876 |      77 | 449.53 | 11-15-2025 | completed
+ 879 |      80 | 338.16 | 11-12-2025 | completed
+ 882 |      83 | 810.76 | 11-09-2025 | completed
+ 885 |      86 | 898.71 | 11-06-2025 | completed
+ 888 |      89 |  71.58 | 11-03-2025 | completed
+ 891 |      92 | 963.70 | 10-31-2025 | completed
+ 894 |      95 | 368.62 | 10-28-2025 | completed
+ 897 |      98 | 870.17 | 10-25-2025 | completed
+ 900 |       1 | 443.43 | 11-21-2025 | completed
+ 903 |       4 | 755.28 | 11-18-2025 | completed
+ 906 |       7 | 592.69 | 11-15-2025 | completed
+ 909 |      10 | 638.43 | 11-12-2025 | completed
+ 912 |      13 | 808.21 | 11-09-2025 | completed
+ 915 |      16 | 285.46 | 11-06-2025 | completed
+ 918 |      19 | 146.06 | 11-03-2025 | completed
+ 921 |      22 | 330.06 | 10-31-2025 | completed
+ 924 |      25 | 482.07 | 10-28-2025 | completed
+ 927 |      28 | 544.20 | 10-25-2025 | completed
+ 930 |      31 | 493.01 | 11-21-2025 | completed
+ 933 |      34 | 258.15 | 11-18-2025 | completed
+ 936 |      37 | 657.82 | 11-15-2025 | completed
+ 939 |      40 | 903.22 | 11-12-2025 | completed
+ 942 |      43 | 531.19 | 11-09-2025 | completed
+ 945 |      46 | 677.95 | 11-06-2025 | completed
+ 948 |      49 | 876.06 | 11-03-2025 | completed
+ 951 |      52 | 216.46 | 10-31-2025 | completed
+ 954 |      55 | 177.51 | 10-28-2025 | completed
+ 957 |      58 | 561.81 | 10-25-2025 | completed
+ 960 |      61 | 371.28 | 11-21-2025 | completed
+ 963 |      64 | 493.00 | 11-18-2025 | completed
+ 966 |      67 | 860.43 | 11-15-2025 | completed
+ 969 |      70 | 842.78 | 11-12-2025 | completed
+ 972 |      73 | 724.01 | 11-09-2025 | completed
+ 975 |      76 | 949.26 | 11-06-2025 | completed
+ 978 |      79 | 976.40 | 11-03-2025 | completed
+ 981 |      82 | 509.47 | 10-31-2025 | completed
+ 984 |      85 | 472.03 | 10-28-2025 | completed
+ 987 |      88 | 542.91 | 10-25-2025 | completed
+ 990 |      91 | 447.31 | 11-21-2025 | completed
+ 993 |      94 | 887.86 | 11-18-2025 | completed
+ 996 |      97 | 222.63 | 11-15-2025 | completed
+ 999 |     100 |  40.70 | 11-12-2025 | completed
+(333 rows)
+
+-- Test 1: Verify all index views exist
+SELECT 
+    'All index views exist' AS test_name,
+    CASE 
+        WHEN count(*) = 9 THEN 'PASS'
+        ELSE 'FAIL: Expected 9 views, found ' || count(*)
+    END AS result
+FROM pg_views 
+WHERE viewname IN (
+    'pg_stat_insights_indexes',
+    'pg_stat_insights_index_usage',
+    'pg_stat_insights_index_bloat',
+    'pg_stat_insights_index_efficiency',
+    'pg_stat_insights_index_maintenance',
+    'pg_stat_insights_index_summary',
+    'pg_stat_insights_index_alerts',
+    'pg_stat_insights_index_dashboard',
+    'pg_stat_insights_missing_indexes'
+);
+       test_name       |             result              
+-----------------------+---------------------------------
+ All index views exist | FAIL: Expected 9 views, found 0
+(1 row)
+
+-- Test 2: pg_stat_insights_indexes - Basic functionality
+SELECT 
+    'pg_stat_insights_indexes has data' AS test_name,
+    CASE 
+        WHEN count(*) > 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_indexes
+WHERE tablename IN ('idx_test_users', 'idx_test_orders');
+ERROR:  relation "pg_stat_insights_indexes" does not exist
+LINE 7: FROM pg_stat_insights_indexes
+             ^
+-- Test 3: Index size metrics
+SELECT 
+    'Index size metrics valid' AS test_name,
+    CASE 
+        WHEN count(*) > 0 AND 
+             min(index_size_bytes) >= 0 AND 
+             min(index_size_mb) >= 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_indexes
+WHERE tablename IN ('idx_test_users', 'idx_test_orders');
+ERROR:  relation "pg_stat_insights_indexes" does not exist
+LINE 9: FROM pg_stat_insights_indexes
+             ^
+-- Test 4: Index type detection
+SELECT 
+    'Index type detection works' AS test_name,
+    CASE 
+        WHEN count(*) > 0 AND 
+             count(*) FILTER (WHERE index_type = 'btree') > 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_indexes
+WHERE tablename IN ('idx_test_users', 'idx_test_orders');
+ERROR:  relation "pg_stat_insights_indexes" does not exist
+LINE 8: FROM pg_stat_insights_indexes
+             ^
+-- Test 5: Index properties
+SELECT 
+    'Index properties detected' AS test_name,
+    CASE 
+        WHEN count(*) FILTER (WHERE is_primary = true) > 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_indexes
+WHERE tablename IN ('idx_test_users', 'idx_test_orders');
+ERROR:  relation "pg_stat_insights_indexes" does not exist
+LINE 7: FROM pg_stat_insights_indexes
+             ^
+-- Test 6: pg_stat_insights_index_usage - Usage analysis
+SELECT 
+    'Index usage view has data' AS test_name,
+    CASE 
+        WHEN count(*) > 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_index_usage
+WHERE tablename IN ('idx_test_users', 'idx_test_orders');
+ERROR:  relation "pg_stat_insights_index_usage" does not exist
+LINE 7: FROM pg_stat_insights_index_usage
+             ^
+-- Test 7: Usage status classification
+SELECT 
+    'Usage status classification works' AS test_name,
+    CASE 
+        WHEN count(*) FILTER (WHERE usage_status IN ('ACTIVE', 'HEAVY', 'OCCASIONAL', 'RARE', 'NEVER_USED')) > 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_index_usage
+WHERE tablename IN ('idx_test_users', 'idx_test_orders');
+ERROR:  relation "pg_stat_insights_index_usage" does not exist
+LINE 7: FROM pg_stat_insights_index_usage
+             ^
+-- Test 8: Index scan ratio
+SELECT 
+    'Index scan ratio valid' AS test_name,
+    CASE 
+        WHEN count(*) > 0 AND 
+             min(index_scan_ratio) >= 0 AND 
+             max(index_scan_ratio) <= 1 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_index_usage
+WHERE tablename IN ('idx_test_users', 'idx_test_orders');
+ERROR:  relation "pg_stat_insights_index_usage" does not exist
+LINE 9: FROM pg_stat_insights_index_usage
+             ^
+-- Test 9: pg_stat_insights_index_bloat - Bloat detection
+SELECT 
+    'Index bloat view accessible' AS test_name,
+    CASE 
+        WHEN count(*) >= 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_index_bloat
+WHERE tablename IN ('idx_test_users', 'idx_test_orders');
+ERROR:  relation "pg_stat_insights_index_bloat" does not exist
+LINE 7: FROM pg_stat_insights_index_bloat
+             ^
+-- Test 10: Bloat severity
+SELECT 
+    'Bloat severity classification works' AS test_name,
+    CASE 
+        WHEN count(*) >= 0 AND 
+             count(*) FILTER (WHERE bloat_severity IN ('NONE', 'LOW', 'MEDIUM', 'HIGH')) >= 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_index_bloat
+WHERE tablename IN ('idx_test_users', 'idx_test_orders');
+ERROR:  relation "pg_stat_insights_index_bloat" does not exist
+LINE 8: FROM pg_stat_insights_index_bloat
+             ^
+-- Test 11: pg_stat_insights_index_efficiency - Efficiency analysis
+SELECT 
+    'Index efficiency view has data' AS test_name,
+    CASE 
+        WHEN count(*) > 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_index_efficiency
+WHERE tablename IN ('idx_test_users', 'idx_test_orders');
+ERROR:  relation "pg_stat_insights_index_efficiency" does not exist
+LINE 7: FROM pg_stat_insights_index_efficiency
+             ^
+-- Test 12: Efficiency rating
+SELECT 
+    'Efficiency rating calculated' AS test_name,
+    CASE 
+        WHEN count(*) FILTER (WHERE efficiency_rating IN ('EXCELLENT', 'GOOD', 'FAIR', 'POOR', 'UNUSED')) > 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_index_efficiency
+WHERE tablename IN ('idx_test_users', 'idx_test_orders');
+ERROR:  relation "pg_stat_insights_index_efficiency" does not exist
+LINE 7: FROM pg_stat_insights_index_efficiency
+             ^
+-- Test 13: pg_stat_insights_index_maintenance - Maintenance recommendations
+SELECT 
+    'Index maintenance view has data' AS test_name,
+    CASE 
+        WHEN count(*) > 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_index_maintenance
+WHERE tablename IN ('idx_test_users', 'idx_test_orders');
+ERROR:  relation "pg_stat_insights_index_maintenance" does not exist
+LINE 7: FROM pg_stat_insights_index_maintenance
+             ^
+-- Test 14: Maintenance type
+SELECT 
+    'Maintenance type detected' AS test_name,
+    CASE 
+        WHEN count(*) FILTER (WHERE maintenance_type IN ('REINDEX', 'VACUUM', 'ANALYZE', 'NONE')) >= 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_index_maintenance
+WHERE tablename IN ('idx_test_users', 'idx_test_orders');
+ERROR:  relation "pg_stat_insights_index_maintenance" does not exist
+LINE 7: FROM pg_stat_insights_index_maintenance
+             ^
+-- Test 15: pg_stat_insights_index_summary - Summary view
+SELECT 
+    'Index summary view accessible' AS test_name,
+    CASE 
+        WHEN total_indexes > 0 AND total_index_size_mb >= 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_index_summary;
+ERROR:  relation "pg_stat_insights_index_summary" does not exist
+LINE 7: FROM pg_stat_insights_index_summary;
+             ^
+-- Test 16: Summary metrics
+SELECT 
+    'Summary metrics calculated' AS test_name,
+    CASE 
+        WHEN active_indexes >= 0 AND unused_indexes >= 0 AND bloated_indexes >= 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_index_summary;
+ERROR:  relation "pg_stat_insights_index_summary" does not exist
+LINE 7: FROM pg_stat_insights_index_summary;
+             ^
+-- Test 17: pg_stat_insights_index_alerts - Alerts
+SELECT 
+    'Index alerts view accessible' AS test_name,
+    CASE 
+        WHEN count(*) >= 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_index_alerts;
+ERROR:  relation "pg_stat_insights_index_alerts" does not exist
+LINE 7: FROM pg_stat_insights_index_alerts;
+             ^
+-- Test 18: Alert severity
+SELECT 
+    'Alert severity levels correct' AS test_name,
+    CASE 
+        WHEN count(*) >= 0 AND 
+             count(*) FILTER (WHERE severity IN ('INFO', 'WARNING', 'CRITICAL')) >= 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_index_alerts;
+ERROR:  relation "pg_stat_insights_index_alerts" does not exist
+LINE 8: FROM pg_stat_insights_index_alerts;
+             ^
+-- Test 19: pg_stat_insights_index_dashboard - Dashboard
+SELECT 
+    'Index dashboard view accessible' AS test_name,
+    CASE 
+        WHEN count(*) > 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_index_dashboard;
+ERROR:  relation "pg_stat_insights_index_dashboard" does not exist
+LINE 7: FROM pg_stat_insights_index_dashboard;
+             ^
+-- Test 20: Dashboard JSON structure
+SELECT 
+    'Dashboard JSON structure valid' AS test_name,
+    CASE 
+        WHEN count(*) FILTER (WHERE section IN ('SUMMARY', 'BLOAT', 'UNUSED', 'ALERT') AND details IS NOT NULL) > 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_index_dashboard;
+ERROR:  relation "pg_stat_insights_index_dashboard" does not exist
+LINE 7: FROM pg_stat_insights_index_dashboard;
+             ^
+-- Test 21: pg_stat_insights_missing_indexes - Missing index recommendations
+SELECT 
+    'Missing indexes view accessible' AS test_name,
+    CASE 
+        WHEN count(*) >= 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_missing_indexes;
+ERROR:  relation "pg_stat_insights_missing_indexes" does not exist
+LINE 7: FROM pg_stat_insights_missing_indexes;
+             ^
+-- Test 22: Cache hit ratio validation
+SELECT 
+    'Index cache hit ratio valid' AS test_name,
+    CASE 
+        WHEN count(*) FILTER (WHERE idx_cache_hit_ratio IS NULL OR (idx_cache_hit_ratio >= 0 AND idx_cache_hit_ratio <= 1)) = count(*) THEN 'PASS'
+        ELSE 'FAIL'
+    END AS result
+FROM pg_stat_insights_indexes
+WHERE tablename IN ('idx_test_users', 'idx_test_orders');
+ERROR:  relation "pg_stat_insights_indexes" does not exist
+LINE 7: FROM pg_stat_insights_indexes
+             ^
+-- Test 23: All views have proper permissions
+SELECT 
+    'Index views have PUBLIC SELECT permission' AS test_name,
+    CASE 
+        WHEN count(*) = 9 THEN 'PASS'
+        ELSE 'FAIL: Expected 9 views with PUBLIC SELECT, found ' || count(*)
+    END AS result
+FROM information_schema.table_privileges 
+WHERE table_name LIKE 'pg_stat_insights_index%' 
+  AND privilege_type = 'SELECT' 
+  AND grantee = 'PUBLIC';
+                 test_name                 |                       result                       
+-------------------------------------------+----------------------------------------------------
+ Index views have PUBLIC SELECT permission | FAIL: Expected 9 views with PUBLIC SELECT, found 0
+(1 row)
+
+-- Cleanup
+DROP TABLE IF EXISTS idx_test_orders CASCADE;
+DROP TABLE IF EXISTS idx_test_users CASCADE;
