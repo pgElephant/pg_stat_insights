@@ -31,7 +31,7 @@ REGRESS = 01_extension_basics 02_basic_queries 03_views_and_aggregates \
 	20_window_functions 21_transaction_handling 22_query_normalization \
 	23_replication_monitoring 24_logical_replication_setup 25_replication_dashboard \
 	26_replication_stress_test 27_high_volume_queries 28_concurrent_operations \
-	29_query_complexity 30_final_integration
+	29_query_complexity 30_final_integration 31_index_monitoring
 
 TAP_TESTS = 1
 
