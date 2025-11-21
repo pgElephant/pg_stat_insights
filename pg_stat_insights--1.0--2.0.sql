@@ -13,7 +13,7 @@
 -- ============================================================================
 
 -- Logical Replication Slots Statistics
-CREATE VIEW pg_stat_insights_logical_replication AS
+CREATE OR REPLACE VIEW pg_stat_insights_logical_replication AS
 SELECT 
     s.slot_name,
     s.plugin,
@@ -37,7 +37,7 @@ FROM pg_replication_slots s
 WHERE s.slot_type = 'logical';
 
 -- All Replication Slots (Physical + Logical) with Health Status
-CREATE VIEW pg_stat_insights_replication_slots AS
+CREATE OR REPLACE VIEW pg_stat_insights_replication_slots AS
 SELECT 
     slot_name,
     plugin,
@@ -66,13 +66,13 @@ SELECT
       WHEN NOT active THEN 'INACTIVE'
       WHEN wal_status = 'lost' THEN 'CRITICAL'
       WHEN wal_status = 'unreserved' THEN 'WARNING'
-      WHEN lag_bytes > 100000000 THEN 'HIGH_LAG'
+      WHEN pg_wal_lsn_diff(pg_current_wal_lsn(), COALESCE(confirmed_flush_lsn, restart_lsn)) > 100000000 THEN 'HIGH_LAG'
       ELSE 'HEALTHY'
     END AS health_status
 FROM pg_replication_slots;
 
 -- Physical Replication with Enhanced Metrics
-CREATE VIEW pg_stat_insights_physical_replication AS
+CREATE OR REPLACE VIEW pg_stat_insights_physical_replication AS
 SELECT 
     r.pid,
     r.usename::text,
@@ -111,7 +111,7 @@ SELECT
 FROM pg_stat_replication r;
 
 -- Replication Summary (Overview of All Replication Activity)
-CREATE VIEW pg_stat_insights_replication_summary AS
+CREATE OR REPLACE VIEW pg_stat_insights_replication_summary AS
 SELECT 
     (SELECT COUNT(*) FROM pg_stat_replication) AS physical_replicas_connected,
     (SELECT COUNT(*) FROM pg_replication_slots WHERE slot_type = 'physical' AND active) AS physical_slots_active,
@@ -130,7 +130,7 @@ SELECT
     (SELECT COUNT(*) FROM pg_stat_replication WHERE sync_state = 'potential') AS potential_sync_replicas;
 
 -- Replication Lag Alerts (Identify problematic replicas and slots)
-CREATE VIEW pg_stat_insights_replication_alerts AS
+CREATE OR REPLACE VIEW pg_stat_insights_replication_alerts AS
 SELECT 
     'PHYSICAL' AS replication_type,
     application_name AS identifier,
@@ -171,7 +171,7 @@ WHERE slot_type = 'logical'
 ORDER BY alert_level DESC, lag_mb DESC NULLS LAST;
 
 -- Replication WAL Statistics (Detailed WAL tracking)
-CREATE VIEW pg_stat_insights_replication_wal AS
+CREATE OR REPLACE VIEW pg_stat_insights_replication_wal AS
 SELECT 
     pg_current_wal_lsn()::text AS current_wal_lsn,
     pg_current_wal_insert_lsn()::text AS current_wal_insert_lsn,
@@ -188,7 +188,7 @@ SELECT
            (SELECT MIN(restart_lsn) FROM pg_replication_slots WHERE restart_lsn IS NOT NULL))::numeric / 1024 / 1024), 2) AS wal_retained_mb;
 
 -- Replication Bottleneck Detection
-CREATE VIEW pg_stat_insights_replication_bottlenecks AS
+CREATE OR REPLACE VIEW pg_stat_insights_replication_bottlenecks AS
 SELECT 
     r.application_name,
     r.client_addr::text,
@@ -220,7 +220,7 @@ SELECT
 FROM pg_stat_replication r;
 
 -- Replication Conflict Detection (For logical replication)
-CREATE VIEW pg_stat_insights_replication_conflicts AS
+CREATE OR REPLACE VIEW pg_stat_insights_replication_conflicts AS
 SELECT 
     s.slot_name,
     s.database,
@@ -253,7 +253,7 @@ FROM pg_replication_slots s
 WHERE s.slot_type = 'logical';
 
 -- Replication Performance Trends (Lag over time estimation)
-CREATE VIEW pg_stat_insights_replication_performance AS
+CREATE OR REPLACE VIEW pg_stat_insights_replication_performance AS
 SELECT 
     r.application_name,
     r.client_addr::text,
@@ -290,7 +290,7 @@ FROM pg_stat_replication r
 WHERE r.replay_lag IS NOT NULL;
 
 -- Replication Slot Health Check (Comprehensive diagnostics)
-CREATE VIEW pg_stat_insights_replication_health AS
+CREATE OR REPLACE VIEW pg_stat_insights_replication_health AS
 SELECT 
     slot_name,
     slot_type,
@@ -329,13 +329,13 @@ SELECT
         WHEN wal_status = 'lost' THEN 'Rebuild subscription - required WAL lost'
         WHEN wal_status = 'unreserved' THEN 'Increase wal_keep_size or max_slot_wal_keep_size'
         WHEN safe_wal_size < 104857600 THEN 'Monitor closely - approaching WAL limit'
-        WHEN lag_mb > 1024 THEN 'Investigate subscriber lag - consider parallel apply'
+        WHEN ROUND((pg_wal_lsn_diff(pg_current_wal_lsn(), COALESCE(confirmed_flush_lsn, restart_lsn))::numeric / 1024 / 1024), 2) > 1024 THEN 'Investigate subscriber lag - consider parallel apply'
         ELSE NULL
     END AS recommendation
 FROM pg_replication_slots;
 
 -- Replication Timeline Analysis
-CREATE VIEW pg_stat_insights_replication_timeline AS
+CREATE OR REPLACE VIEW pg_stat_insights_replication_timeline AS
 SELECT 
     r.application_name,
     r.client_addr::text,
@@ -371,7 +371,7 @@ SELECT
 FROM pg_stat_replication r;
 
 -- Logical Replication Subscriptions (Subscriber side monitoring)
-CREATE VIEW pg_stat_insights_subscriptions AS
+CREATE OR REPLACE VIEW pg_stat_insights_subscriptions AS
 SELECT 
     s.subname AS subscription_name,
     s.oid::int4 AS subscription_oid,
@@ -395,11 +395,13 @@ FROM pg_subscription s
 JOIN pg_database d ON d.oid = s.subdbid;
 
 -- Logical Replication Subscription Statistics
+-- Drop and recreate to change column names from srsubid to subid
+DROP VIEW IF EXISTS pg_stat_insights_subscription_stats CASCADE;
 CREATE VIEW pg_stat_insights_subscription_stats AS
 SELECT 
-    sr.subid,
+    sr.srsubid AS subid,
     s.subname AS subscription_name,
-    sr.relid,
+    sr.srrelid AS relid,
     n.nspname || '.' || c.relname AS table_name,
     sr.srsubstate AS sync_state,
     sr.srsublsn::text AS subscription_lsn,
@@ -418,12 +420,12 @@ SELECT
         ELSE 'Check subscription status'
     END AS status_message
 FROM pg_subscription_rel sr
-JOIN pg_subscription s ON s.oid = sr.subid
-JOIN pg_class c ON c.oid = sr.relid
+JOIN pg_subscription s ON s.oid = sr.srsubid
+JOIN pg_class c ON c.oid = sr.srrelid
 JOIN pg_namespace n ON n.oid = c.relnamespace;
 
 -- Logical Replication Publications (Publisher side monitoring)
-CREATE VIEW pg_stat_insights_publications AS
+CREATE OR REPLACE VIEW pg_stat_insights_publications AS
 SELECT 
     p.pubname AS publication_name,
     p.oid::int4 AS publication_oid,
@@ -443,11 +445,16 @@ FROM pg_publication p
 JOIN pg_database d ON d.datname = current_database();
 
 -- Replication Origin Tracking (For cascading and bidirectional replication)
+-- Drop and recreate to change column structure (adds session_active column)
+DROP VIEW IF EXISTS pg_stat_insights_replication_origins CASCADE;
 CREATE VIEW pg_stat_insights_replication_origins AS
 SELECT 
     o.roident::int4 AS origin_id,
     o.roname AS origin_name,
-    pg_replication_origin_session_is_setup(o.roident) AS session_active,
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM pg_replication_origin_status WHERE local_id = o.roident) THEN true
+        ELSE false
+    END AS session_active,
     COALESCE(pg_replication_origin_progress(o.roname, false)::text, 'No progress') AS remote_lsn,
     COALESCE(pg_replication_origin_progress(o.roname, true)::text, 'No progress') AS local_lsn,
     CASE 
@@ -463,7 +470,7 @@ SELECT
 FROM pg_replication_origin o;
 
 -- Replication Diagnostics Dashboard (Single comprehensive view)
-CREATE VIEW pg_stat_insights_replication_dashboard AS
+CREATE OR REPLACE VIEW pg_stat_insights_replication_dashboard AS
 SELECT 
     'CLUSTER_SUMMARY' AS section,
     NULL::text AS name,

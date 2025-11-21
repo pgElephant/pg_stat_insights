@@ -8,7 +8,7 @@ CREATE EXTENSION pg_stat_insights;
 SELECT extname, extversion FROM pg_extension WHERE extname = 'pg_stat_insights';
      extname      | extversion 
 ------------------+------------
- pg_stat_insights | 1.0
+ pg_stat_insights | 2.0
 (1 row)
 
 -- Check that all main objects exist

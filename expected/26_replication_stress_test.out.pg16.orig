@@ -1,0 +1,196 @@
+-- Test replication views under stress and edge cases
+-- This test verifies replication monitoring behaves correctly with extreme conditions
+-- Test 1: Verify all replication views handle empty results gracefully
+SELECT COUNT(*) >= 0 AS physical_replication_empty_ok
+FROM pg_stat_insights_physical_replication;
+ERROR:  relation "pg_stat_insights_physical_replication" does not exist
+LINE 2: FROM pg_stat_insights_physical_replication;
+             ^
+SELECT COUNT(*) >= 0 AS logical_replication_empty_ok
+FROM pg_stat_insights_logical_replication;
+ERROR:  relation "pg_stat_insights_logical_replication" does not exist
+LINE 2: FROM pg_stat_insights_logical_replication;
+             ^
+SELECT COUNT(*) >= 0 AS replication_slots_empty_ok
+FROM pg_stat_insights_replication_slots;
+ERROR:  relation "pg_stat_insights_replication_slots" does not exist
+LINE 2: FROM pg_stat_insights_replication_slots;
+             ^
+-- Test 2: Verify summary view returns valid data even with no replication
+SELECT 
+    physical_replicas_connected >= 0 AS valid_physical_count,
+    logical_slots_active >= 0 AS valid_logical_count,
+    inactive_slots >= 0 AS valid_inactive_count,
+    current_wal_lsn IS NOT NULL AS has_wal_lsn
+FROM pg_stat_insights_replication_summary;
+ERROR:  relation "pg_stat_insights_replication_summary" does not exist
+LINE 6: FROM pg_stat_insights_replication_summary;
+             ^
+-- Test 3: Verify WAL view returns valid current state
+SELECT 
+    current_wal_lsn IS NOT NULL AS has_current_lsn,
+    current_wal_insert_lsn IS NOT NULL AS has_insert_lsn,
+    total_wal_generated_bytes >= 0 AS valid_wal_bytes,
+    wal_files_count >= 0 AS valid_file_count,
+    wal_total_size_bytes >= 0 AS valid_total_size
+FROM pg_stat_insights_replication_wal;
+ERROR:  relation "pg_stat_insights_replication_wal" does not exist
+LINE 7: FROM pg_stat_insights_replication_wal;
+             ^
+-- Test 4: Test publications with multiple table patterns
+CREATE TABLE stress_test_1 (id INT PRIMARY KEY, data TEXT);
+CREATE TABLE stress_test_2 (id INT PRIMARY KEY, data TEXT);
+CREATE TABLE stress_test_3 (id INT PRIMARY KEY, data TEXT);
+-- Insert test data
+INSERT INTO stress_test_1 SELECT i, 'data_' || i FROM generate_series(1, 100) i;
+INSERT INTO stress_test_2 SELECT i, 'data_' || i FROM generate_series(1, 100) i;
+INSERT INTO stress_test_3 SELECT i, 'data_' || i FROM generate_series(1, 100) i;
+-- Test 5: Create publication with multiple tables
+CREATE PUBLICATION stress_pub FOR TABLE stress_test_1, stress_test_2, stress_test_3;
+WARNING:  wal_level is insufficient to publish logical changes
+HINT:  Set wal_level to "logical" before creating subscriptions.
+SELECT 
+    publication_name = 'stress_pub' AS correct_name,
+    scope = 'Selected tables' AS correct_scope,
+    table_count = 3 AS correct_table_count
+FROM pg_stat_insights_publications
+WHERE publication_name = 'stress_pub';
+ERROR:  relation "pg_stat_insights_publications" does not exist
+LINE 5: FROM pg_stat_insights_publications
+             ^
+-- Test 6: Create multiple publications
+CREATE PUBLICATION stress_pub_all FOR ALL TABLES;
+WARNING:  wal_level is insufficient to publish logical changes
+HINT:  Set wal_level to "logical" before creating subscriptions.
+CREATE PUBLICATION stress_pub_selective FOR TABLE stress_test_1;
+WARNING:  wal_level is insufficient to publish logical changes
+HINT:  Set wal_level to "logical" before creating subscriptions.
+SELECT COUNT(*) = 3 AS has_three_publications
+FROM pg_stat_insights_publications
+WHERE publication_name LIKE 'stress_pub%';
+ERROR:  relation "pg_stat_insights_publications" does not exist
+LINE 2: FROM pg_stat_insights_publications
+             ^
+-- Test 7: Test publication operations filtering
+CREATE PUBLICATION stress_pub_insert_only FOR TABLE stress_test_1 WITH (publish = 'insert');
+WARNING:  wal_level is insufficient to publish logical changes
+HINT:  Set wal_level to "logical" before creating subscriptions.
+SELECT 
+    publication_name = 'stress_pub_insert_only' AS correct_name,
+    operations LIKE '%INSERT%' AS has_insert,
+    operations NOT LIKE '%UPDATE%' AS no_update,
+    operations NOT LIKE '%DELETE%' AS no_delete
+FROM pg_stat_insights_publications
+WHERE publication_name = 'stress_pub_insert_only';
+ERROR:  relation "pg_stat_insights_publications" does not exist
+LINE 6: FROM pg_stat_insights_publications
+             ^
+-- Test 8: Test alerts view with no replication (should show OK)
+SELECT 
+    COUNT(*) FILTER (WHERE alert_level = 'OK') >= 0 AS has_ok_alerts,
+    COUNT(*) FILTER (WHERE alert_level LIKE 'CRITICAL%') >= 0 AS has_critical_count,
+    COUNT(*) FILTER (WHERE alert_level LIKE 'WARNING%') >= 0 AS has_warning_count
+FROM pg_stat_insights_replication_alerts;
+ERROR:  relation "pg_stat_insights_replication_alerts" does not exist
+LINE 5: FROM pg_stat_insights_replication_alerts;
+             ^
+-- Test 9: Test dashboard structure with minimal replication
+SELECT 
+    COUNT(DISTINCT section) >= 1 AS has_sections,
+    COUNT(*) FILTER (WHERE section = 'CLUSTER_SUMMARY') = 1 AS has_summary,
+    COUNT(*) FILTER (WHERE details IS NOT NULL) = COUNT(*) AS all_have_details
+FROM pg_stat_insights_replication_dashboard;
+ERROR:  relation "pg_stat_insights_replication_dashboard" does not exist
+LINE 5: FROM pg_stat_insights_replication_dashboard;
+             ^
+-- Test 10: Test dashboard JSON validity
+SELECT 
+    jsonb_typeof(details::jsonb) = 'object' AS valid_json_object,
+    (details->>'physical_replicas')::int >= 0 AS physical_count_valid,
+    (details->>'logical_slots')::int >= 0 AS logical_count_valid
+FROM pg_stat_insights_replication_dashboard
+WHERE section = 'CLUSTER_SUMMARY';
+ERROR:  relation "pg_stat_insights_replication_dashboard" does not exist
+LINE 5: FROM pg_stat_insights_replication_dashboard
+             ^
+-- Test 11: Test health view with no slots
+SELECT COUNT(*) >= 0 AS health_view_handles_empty
+FROM pg_stat_insights_replication_health;
+ERROR:  relation "pg_stat_insights_replication_health" does not exist
+LINE 2: FROM pg_stat_insights_replication_health;
+             ^
+-- Test 12: Test performance view with no replication
+SELECT COUNT(*) >= 0 AS performance_view_handles_empty
+FROM pg_stat_insights_replication_performance;
+ERROR:  relation "pg_stat_insights_replication_performance" does not exist
+LINE 2: FROM pg_stat_insights_replication_performance;
+             ^
+-- Test 13: Test conflicts view with no logical replication
+SELECT COUNT(*) >= 0 AS conflicts_view_handles_empty
+FROM pg_stat_insights_replication_conflicts;
+ERROR:  relation "pg_stat_insights_replication_conflicts" does not exist
+LINE 2: FROM pg_stat_insights_replication_conflicts;
+             ^
+-- Test 14: Test subscriptions view with no subscriptions
+SELECT COUNT(*) = 0 AS no_subscriptions_correct
+FROM pg_stat_insights_subscriptions;
+ERROR:  relation "pg_stat_insights_subscriptions" does not exist
+LINE 2: FROM pg_stat_insights_subscriptions;
+             ^
+-- Test 15: Test subscription stats with no subscriptions
+SELECT COUNT(*) = 0 AS no_subscription_stats_correct
+FROM pg_stat_insights_subscription_stats;
+ERROR:  relation "pg_stat_insights_subscription_stats" does not exist
+LINE 2: FROM pg_stat_insights_subscription_stats;
+             ^
+-- Test 16: Test origins view with no origins
+SELECT COUNT(*) >= 0 AS origins_view_handles_empty
+FROM pg_stat_insights_replication_origins;
+ERROR:  relation "pg_stat_insights_replication_origins" does not exist
+LINE 2: FROM pg_stat_insights_replication_origins;
+             ^
+-- Test 17: Verify all numeric columns are non-negative in summary
+SELECT 
+    physical_replicas_connected >= 0 AS physical_non_negative,
+    logical_slots_active >= 0 AS logical_non_negative,
+    inactive_slots >= 0 AS inactive_non_negative,
+    slots_with_lost_wal >= 0 AS lost_wal_non_negative,
+    streaming_replicas >= 0 AS streaming_non_negative,
+    sync_replicas >= 0 AS sync_non_negative
+FROM pg_stat_insights_replication_summary;
+ERROR:  relation "pg_stat_insights_replication_summary" does not exist
+LINE 8: FROM pg_stat_insights_replication_summary;
+             ^
+-- Test 18: Test WAL statistics consistency
+SELECT 
+    wal_files_count >= 0 AS file_count_valid,
+    wal_total_size_bytes >= 0 AS total_size_valid,
+    total_wal_generated_bytes >= 0 AS generated_valid,
+    wal_total_size_mb >= 0 AS size_mb_valid,
+    total_wal_generated_gb >= 0 AS generated_gb_valid
+FROM pg_stat_insights_replication_wal;
+ERROR:  relation "pg_stat_insights_replication_wal" does not exist
+LINE 7: FROM pg_stat_insights_replication_wal;
+             ^
+-- Test 19: Verify all replication views can be joined together
+SELECT COUNT(*) >= 0 AS views_joinable
+FROM pg_stat_insights_replication_summary s
+CROSS JOIN pg_stat_insights_replication_wal w;
+ERROR:  relation "pg_stat_insights_replication_summary" does not exist
+LINE 2: FROM pg_stat_insights_replication_summary s
+             ^
+-- Test 20: Cleanup
+DROP PUBLICATION stress_pub;
+DROP PUBLICATION stress_pub_all;
+DROP PUBLICATION stress_pub_selective;
+DROP PUBLICATION stress_pub_insert_only;
+DROP TABLE stress_test_1;
+DROP TABLE stress_test_2;
+DROP TABLE stress_test_3;
+-- Verify cleanup
+SELECT COUNT(*) = 0 AS cleanup_successful
+FROM pg_stat_insights_publications
+WHERE publication_name LIKE 'stress_pub%';
+ERROR:  relation "pg_stat_insights_publications" does not exist
+LINE 2: FROM pg_stat_insights_publications
+             ^
