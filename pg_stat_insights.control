@@ -13,6 +13,6 @@
 
 # pg_stat_insights extension
 comment = 'track planning and execution statistics of all SQL statements executed with enhanced insights'
-default_version = '1.0'
+default_version = '2.0'
 module_pathname = '$libdir/pg_stat_insights'
 relocatable = true
