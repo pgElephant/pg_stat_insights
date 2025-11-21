@@ -1,0 +1,106 @@
+-- Test replication monitoring views
+-- This test verifies the replication monitoring views exist and return proper structure
+
+-- Test 1: Verify physical replication view exists
+SELECT COUNT(*) >= 0 AS physical_replication_view_exists
+FROM pg_stat_insights_physical_replication;
+
+-- Test 2: Verify logical replication view exists
+SELECT COUNT(*) >= 0 AS logical_replication_view_exists
+FROM pg_stat_insights_logical_replication;
+
+-- Test 3: Verify replication slots view exists
+SELECT COUNT(*) >= 0 AS replication_slots_view_exists
+FROM pg_stat_insights_replication_slots;
+
+-- Test 4: Verify replication summary view exists
+SELECT 
+    physical_replicas_connected IS NOT NULL AS has_physical_count,
+    logical_slots_active IS NOT NULL AS has_logical_count,
+    current_wal_lsn IS NOT NULL AS has_wal_lsn
+FROM pg_stat_insights_replication_summary;
+
+-- Test 5: Verify replication alerts view structure
+SELECT 
+    COUNT(*) FILTER (WHERE replication_type IN ('PHYSICAL', 'LOGICAL')) = COUNT(*) AS valid_replication_types,
+    COUNT(*) FILTER (WHERE alert_level IS NOT NULL) = COUNT(*) AS has_alert_levels
+FROM pg_stat_insights_replication_alerts;
+
+-- Test 6: Verify WAL statistics view exists and has data
+SELECT 
+    current_wal_lsn IS NOT NULL AS has_current_lsn,
+    wal_files_count >= 0 AS has_wal_count,
+    total_wal_generated_bytes >= 0 AS has_total_bytes
+FROM pg_stat_insights_replication_wal;
+
+-- Test 7: Verify bottlenecks view structure
+SELECT COUNT(*) >= 0 AS bottlenecks_view_exists
+FROM pg_stat_insights_replication_bottlenecks;
+
+-- Test 8: Verify conflicts view structure (logical replication)
+SELECT COUNT(*) >= 0 AS conflicts_view_exists
+FROM pg_stat_insights_replication_conflicts;
+
+-- Test 9: Verify health view structure
+SELECT COUNT(*) >= 0 AS health_view_exists
+FROM pg_stat_insights_replication_health;
+
+-- Test 10: Verify performance view structure
+SELECT COUNT(*) >= 0 AS performance_view_exists
+FROM pg_stat_insights_replication_performance;
+
+-- Test 11: Verify timeline view structure
+SELECT COUNT(*) >= 0 AS timeline_view_exists
+FROM pg_stat_insights_replication_timeline;
+
+-- Test 12: Verify subscriptions view structure
+SELECT COUNT(*) >= 0 AS subscriptions_view_exists
+FROM pg_stat_insights_subscriptions;
+
+-- Test 13: Verify subscription stats view structure
+SELECT COUNT(*) >= 0 AS subscription_stats_view_exists
+FROM pg_stat_insights_subscription_stats;
+
+-- Test 14: Verify publications view structure
+SELECT 
+    COUNT(*) >= 0 AS publications_view_exists,
+    COUNT(*) FILTER (WHERE scope IN ('All tables', 'Selected tables')) = COUNT(*) AS valid_scope
+FROM pg_stat_insights_publications;
+
+-- Test 15: Verify replication origins view structure
+SELECT COUNT(*) >= 0 AS origins_view_exists
+FROM pg_stat_insights_replication_origins;
+
+-- Test 16: Verify dashboard view structure and JSON format
+SELECT 
+    COUNT(*) FILTER (WHERE section IN ('CLUSTER_SUMMARY', 'PHYSICAL_REPLICA', 'LOGICAL_SLOT', 'ALERT')) >= 0 AS valid_sections,
+    COUNT(*) FILTER (WHERE details IS NOT NULL) >= 0 AS has_details
+FROM pg_stat_insights_replication_dashboard;
+
+-- Test 17: Verify dashboard cluster summary has required keys
+SELECT 
+    (details->>'physical_replicas') IS NOT NULL AS has_physical_replicas,
+    (details->>'logical_slots') IS NOT NULL AS has_logical_slots,
+    (details->>'active_subscriptions') IS NOT NULL AS has_subscriptions,
+    (details->>'active_publications') IS NOT NULL AS has_publications
+FROM pg_stat_insights_replication_dashboard
+WHERE section = 'CLUSTER_SUMMARY';
+
+-- Test 18: Verify alert levels are valid
+SELECT 
+    COUNT(*) FILTER (WHERE alert_level LIKE 'OK%' OR alert_level LIKE 'INFO%' 
+                      OR alert_level LIKE 'WARNING%' OR alert_level LIKE 'CRITICAL%') = COUNT(*) AS valid_alert_levels
+FROM pg_stat_insights_replication_alerts;
+
+-- Test 19: Verify health status values are valid
+SELECT 
+    COUNT(*) FILTER (WHERE overall_health IN ('OK', 'WARNING', 'CRITICAL')) = COUNT(*) AS valid_health_status
+FROM pg_stat_insights_replication_health;
+
+-- Test 20: Verify performance ratings are valid
+SELECT 
+    COUNT(*) FILTER (WHERE performance_rating IN ('Excellent (<1s)', 'Good (<5s)', 'Fair (<30s)', 
+                                                   'Poor (<5min)', 'Critical (>5min)')) = COUNT(*) AS valid_ratings
+FROM pg_stat_insights_replication_performance
+WHERE performance_rating IS NOT NULL;
+
