@@ -1,0 +1,26 @@
+test_name                    | result
+------------------------------+-------
+All index views exist          | PASS
+pg_stat_insights_indexes has data | PASS
+Index size metrics valid       | PASS
+Index type detection works     | PASS
+Index properties detected      | PASS
+Index usage view has data      | PASS
+Usage status classification works | PASS
+Index scan ratio valid         | PASS
+Index bloat view accessible    | PASS
+Bloat severity classification works | PASS
+Index efficiency view has data | PASS
+Efficiency rating calculated   | PASS
+Index maintenance view has data | PASS
+Maintenance type detected      | PASS
+Index summary view accessible  | PASS
+Summary metrics calculated     | PASS
+Index alerts view accessible   | PASS
+Alert severity levels correct  | PASS
+Index dashboard view accessible | PASS
+Dashboard JSON structure valid | PASS
+Missing indexes view accessible | PASS
+Index cache hit ratio valid    | PASS
+Index views have PUBLIC SELECT permission | PASS
+
