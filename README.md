@@ -10,14 +10,14 @@
 
 <div align="center">
 
-**Track 52 Metrics Across 11 Views - Monitor PostgreSQL Query Performance in Real-Time**
+**Track 52 Metrics Across 24 Views - Monitor PostgreSQL Query Performance & Replication in Real-Time**
 
 *Production-ready extension for PostgreSQL 16, 17, 18 - Drop-in replacement for pg_stat_statements with enhanced analytics*
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20|%2017%20|%2018-blue.svg)](https://www.postgresql.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![Tests](https://img.shields.io/badge/tests-22%2F22%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-25%2F25%20passing-brightgreen.svg)]()
 [![Metrics](https://img.shields.io/badge/metrics-52_columns-brightgreen.svg)]()
 [![Documentation](https://img.shields.io/badge/docs-github.io-blue.svg)](https://pgelephant.github.io/pg_stat_insights/)
 
@@ -45,8 +45,8 @@
 - **11 parameters** - Fine-tune tracking, histograms, and statistics collection
 - **Drop-in replacement** for pg_stat_statements with enhanced metrics
 - **PostgreSQL 16-18** - Full compatibility with PostgreSQL 16, 17, and 18
-- **22 regression tests** - Comprehensive test coverage for all features
 - **Response time tracking** - Categorize queries by execution time (less than 1ms to greater than 10s)
+- **Replication monitoring** - 16 specialized views for physical & logical replication health, lag tracking, and diagnostics
 - **Cache analysis** - Identify buffer cache inefficiencies and optimization opportunities
 - **WAL monitoring** - Track write-ahead log generation per query
 - **Advanced features** - JSON/JSONB, arrays, partitioning, triggers, window functions
@@ -170,6 +170,8 @@ All 24 pre-built views:
 - **Optimize cache usage** - Detect buffer cache misses and improve shared_buffers efficiency
 - **Reduce WAL overhead** - Monitor write-ahead log generation per query type
 - **Track query patterns** - Analyze execution frequency, response times, and resource consumption
+- **Monitor replication** - Comprehensive physical and logical replication monitoring with bottleneck detection
+- **Troubleshoot lag** - Identify network, I/O, or replay bottlenecks with actionable recommendations
 - **Monitor in real-time** - Integrate with Grafana for live dashboards and alerting
 - **PostgreSQL best practices** - Built following PostgreSQL coding standards and conventions
 
@@ -178,12 +180,14 @@ All 24 pre-built views:
 | Feature | pg_stat_statements | pg_stat_monitor | **pg_stat_insights** |
 |---------|:------------------:|:---------------:|:--------------------:|
 | **Metric Columns** | 44 | 58 | **52** |
-| **Pre-built Views** | 2 | 5 | **11** |
+| **Pre-built Views** | 2 | 5 | **24** |
 | **Configuration Options** | 5 | 12 | **11** |
 | **Cache Analysis** | Basic | Basic | **Enhanced with ratios** |
 | **Response Time Categories** | No | No | **Yes (<1ms to >10s)** |
 | **Time-Series Tracking** | No | No | **Yes (bucket-based)** |
-| **TAP Test Coverage** | Standard | Limited | **150 tests, 100% coverage** |
+| **Replication Monitoring** | No | No | **16 specialized views** |
+| **Bottleneck Detection** | No | No | **Network/I/O/Replay analysis** |
+| **Logical Replication** | No | No | **Subscriptions/Publications** |
 | **Documentation** | Basic | Medium | **30+ pages on GitHub Pages** |
 | **Prometheus Integration** | Manual | Manual | **Pre-built queries & dashboards** |
 
@@ -191,24 +195,30 @@ All 24 pre-built views:
 
 ---
 
-## PostgreSQL Performance Testing
+## Replication Monitoring
 
-**Comprehensive TAP Test Suite for Quality Assurance:**
-- **16 test files** covering all extension functionality
-- **150 test cases** with 100% code coverage
-- Tests all 52 metric columns, 24 views (including 16 replication diagnostic views with subscription/publication tracking), 11 parameters
-- Custom StatsInsightManager.pm framework
-- No external Perl dependencies required
-- Compatible with PostgreSQL 18 testing infrastructure
+**Comprehensive Physical & Logical Replication Monitoring:**
 
-**Run PostgreSQL extension tests:**
-```bash
-./run_all_tests.sh
-```
+### Physical Replication (8 views)
+- **Health monitoring** - Replica status with HEALTHY/WARNING/CRITICAL classifications
+- **Bottleneck detection** - Identify network, disk I/O, or replay bottlenecks
+- **Performance rating** - Excellent to Critical based on lag thresholds
+- **WAL tracking** - Monitor WAL retention and disk usage
+- **Alerts** - Automated threshold-based alerting for lag and issues
 
-**Continuous Integration:** GitHub Actions workflow for automated PostgreSQL testing on every commit
+### Logical Replication (7 views)
+- **Subscription tracking** - Monitor subscriber health and sync status
+- **Publication management** - Track publisher configuration and active subscribers
+- **Per-table sync** - Monitor table-level replication progress
+- **Conflict detection** - Identify and troubleshoot replication conflicts
+- **WAL safety** - Track WAL segment availability and retention
 
-**Learn more:** [Testing Guide](https://pgelephant.github.io/pg_stat_insights/testing/)
+### Unified Dashboard (1 view)
+- **JSON dashboard** - Single comprehensive view with all replication metrics
+- **Grafana/Prometheus ready** - Structured output for monitoring systems
+- **Complete status** - Physical replicas, logical slots, alerts in one query
+
+**Learn more:** [Replication Monitoring Guide](https://pgelephant.github.io/pg_stat_insights/views/)
 
 ---
 
