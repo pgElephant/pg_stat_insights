@@ -23,20 +23,36 @@ SELECT proname FROM pg_proc WHERE proname LIKE 'pg_stat_insights%' ORDER BY pron
 
 -- Check that all views exist
 SELECT viewname FROM pg_views WHERE viewname LIKE 'pg_stat_insights%' ORDER BY viewname;
-              viewname              
-------------------------------------
+                 viewname                 
+------------------------------------------
  pg_stat_insights
  pg_stat_insights_by_bucket
  pg_stat_insights_errors
  pg_stat_insights_histogram_summary
+ pg_stat_insights_logical_replication
+ pg_stat_insights_physical_replication
  pg_stat_insights_plan_errors
+ pg_stat_insights_publications
  pg_stat_insights_replication
+ pg_stat_insights_replication_alerts
+ pg_stat_insights_replication_bottlenecks
+ pg_stat_insights_replication_conflicts
+ pg_stat_insights_replication_dashboard
+ pg_stat_insights_replication_health
+ pg_stat_insights_replication_origins
+ pg_stat_insights_replication_performance
+ pg_stat_insights_replication_slots
+ pg_stat_insights_replication_summary
+ pg_stat_insights_replication_timeline
+ pg_stat_insights_replication_wal
  pg_stat_insights_slow_queries
+ pg_stat_insights_subscription_stats
+ pg_stat_insights_subscriptions
  pg_stat_insights_top_by_calls
  pg_stat_insights_top_by_io
  pg_stat_insights_top_by_time
  pg_stat_insights_top_cache_misses
-(11 rows)
+(27 rows)
 
 -- Verify function signatures
 \df pg_stat_insights_reset

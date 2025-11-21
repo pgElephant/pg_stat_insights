@@ -185,7 +185,7 @@ SELECT
       WHEN NOT active THEN 'INACTIVE'
       WHEN wal_status = 'lost' THEN 'CRITICAL'
       WHEN wal_status = 'unreserved' THEN 'WARNING'
-      WHEN lag_bytes > 100000000 THEN 'HIGH_LAG'
+      WHEN pg_wal_lsn_diff(pg_current_wal_lsn(), COALESCE(confirmed_flush_lsn, restart_lsn)) > 100000000 THEN 'HIGH_LAG'
       ELSE 'HEALTHY'
     END AS health_status
 FROM pg_replication_slots;
@@ -448,7 +448,7 @@ SELECT
         WHEN wal_status = 'lost' THEN 'Rebuild subscription - required WAL lost'
         WHEN wal_status = 'unreserved' THEN 'Increase wal_keep_size or max_slot_wal_keep_size'
         WHEN safe_wal_size < 104857600 THEN 'Monitor closely - approaching WAL limit'
-        WHEN lag_mb > 1024 THEN 'Investigate subscriber lag - consider parallel apply'
+        WHEN (pg_wal_lsn_diff(pg_current_wal_lsn(), COALESCE(confirmed_flush_lsn, restart_lsn))::numeric / 1024 / 1024) > 1024 THEN 'Investigate subscriber lag - consider parallel apply'
         ELSE NULL
     END AS recommendation
 FROM pg_replication_slots;
@@ -516,9 +516,9 @@ JOIN pg_database d ON d.oid = s.subdbid;
 -- Logical Replication Subscription Statistics
 CREATE VIEW pg_stat_insights_subscription_stats AS
 SELECT 
-    sr.subid,
+    sr.srsubid,
     s.subname AS subscription_name,
-    sr.relid,
+    sr.srrelid AS relid,
     n.nspname || '.' || c.relname AS table_name,
     sr.srsubstate AS sync_state,
     sr.srsublsn::text AS subscription_lsn,
@@ -537,8 +537,8 @@ SELECT
         ELSE 'Check subscription status'
     END AS status_message
 FROM pg_subscription_rel sr
-JOIN pg_subscription s ON s.oid = sr.subid
-JOIN pg_class c ON c.oid = sr.relid
+JOIN pg_subscription s ON s.oid = sr.srsubid
+JOIN pg_class c ON c.oid = sr.srrelid
 JOIN pg_namespace n ON n.oid = c.relnamespace;
 
 -- Logical Replication Publications (Publisher side monitoring)
@@ -566,7 +566,6 @@ CREATE VIEW pg_stat_insights_replication_origins AS
 SELECT 
     o.roident::int4 AS origin_id,
     o.roname AS origin_name,
-    pg_replication_origin_session_is_setup(o.roident) AS session_active,
     COALESCE(pg_replication_origin_progress(o.roname, false)::text, 'No progress') AS remote_lsn,
     COALESCE(pg_replication_origin_progress(o.roname, true)::text, 'No progress') AS local_lsn,
     CASE 
