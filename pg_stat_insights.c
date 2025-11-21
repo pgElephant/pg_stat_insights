@@ -47,8 +47,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "access/genam.h"
+#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/parallel.h"
+#include "access/table.h"
 #include "catalog/pg_authid.h"
 #include "common/int.h"
 #include "executor/instrument.h"
@@ -70,10 +73,15 @@
 #include "storage/lwlock.h"
 #include "storage/shmem.h"
 #include "storage/spin.h"
+#include "storage/lock.h"
+#include "storage/proc.h"
+#include "catalog/index.h"
+#include "catalog/pg_class.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
+#include "utils/rel.h"
 #include "utils/timestamp.h"
 
 PG_MODULE_MAGIC;
@@ -226,6 +234,49 @@ typedef struct pgsiGlobalStats
 } pgsiGlobalStats;
 
 /*
+ * Index size snapshot entry - tracks historical index sizes
+ */
+#define PGSI_INDEX_SNAPSHOTS_MAX 1000
+#define PGSI_INDEX_SNAPSHOTS_HISTORY 30  /* Keep 30 snapshots */
+
+typedef struct pgsiIndexSizeSnapshot
+{
+	Oid			indexrelid;		/* index OID */
+	int64		size_bytes;		/* index size in bytes */
+	TimestampTz snapshot_time;	/* when this snapshot was taken */
+} pgsiIndexSizeSnapshot;
+
+typedef struct pgsiIndexSizeHistory
+{
+	int			num_snapshots;	/* number of valid snapshots */
+	int			next_slot;		/* next slot to use (circular buffer) */
+	pgsiIndexSizeSnapshot snapshots[PGSI_INDEX_SNAPSHOTS_MAX];
+	slock_t		mutex;			/* protects this structure */
+} pgsiIndexSizeHistory;
+
+/*
+ * Index lock contention entry
+ */
+#define PGSI_INDEX_LOCKS_MAX 1000
+
+typedef struct pgsiIndexLockEntry
+{
+	Oid			indexrelid;		/* index OID */
+	Oid			relid;			/* table OID */
+	int64		lock_waits;		/* number of lock waits */
+	int64		total_wait_time_ms;	/* total wait time in milliseconds */
+	TimestampTz last_wait_time;	/* last time a wait occurred */
+	slock_t		mutex;			/* protects this entry */
+} pgsiIndexLockEntry;
+
+typedef struct pgsiIndexLockStats
+{
+	int			num_entries;	/* number of active entries */
+	pgsiIndexLockEntry entries[PGSI_INDEX_LOCKS_MAX];
+	slock_t		mutex;			/* protects entry allocation */
+} pgsiIndexLockStats;
+
+/*
  * Statistics per statement
  *
  * Note: in event of a failure in garbage collection of the query text file,
@@ -257,6 +308,8 @@ typedef struct pgsiSharedState
 	int			n_writers;		/* number of active writers to query file */
 	int			gc_count;		/* query file garbage collection cycle count */
 	pgsiGlobalStats stats;		/* global statistics for pgsi */
+	pgsiIndexSizeHistory *index_size_history;	/* index size snapshots */
+	pgsiIndexLockStats *index_lock_stats;		/* index lock contention */
 } pgsiSharedState;
 
 /*---- Local variables ----*/
@@ -330,6 +383,9 @@ PG_FUNCTION_INFO_V1(pg_stat_insights_1_12);
 PG_FUNCTION_INFO_V1(pg_stat_insights_1_13);
 PG_FUNCTION_INFO_V1(pg_stat_insights);
 PG_FUNCTION_INFO_V1(pg_stat_insights_info);
+PG_FUNCTION_INFO_V1(pg_stat_insights_index_size_snapshot);
+PG_FUNCTION_INFO_V1(pg_stat_insights_index_size_trends);
+PG_FUNCTION_INFO_V1(pg_stat_insights_index_lock_contention);
 
 
 static void pgsi_shmem_request(void);
@@ -559,6 +615,36 @@ pgsi_shmem_startup(void)
 		pgsi->gc_count = 0;
 		pgsi->stats.dealloc = 0;
 		pgsi->stats.stats_reset = GetCurrentTimestamp();
+	}
+
+	/* Initialize index size history */
+	pgsi->index_size_history = ShmemInitStruct("pg_stat_insights_index_size_history",
+												sizeof(pgsiIndexSizeHistory),
+												&found);
+	if (!found)
+	{
+		pgsi->index_size_history->num_snapshots = 0;
+		pgsi->index_size_history->next_slot = 0;
+		SpinLockInit(&pgsi->index_size_history->mutex);
+	}
+
+	/* Initialize index lock stats */
+	pgsi->index_lock_stats = ShmemInitStruct("pg_stat_insights_index_lock_stats",
+											 sizeof(pgsiIndexLockStats),
+											 &found);
+	if (!found)
+	{
+		pgsi->index_lock_stats->num_entries = 0;
+		SpinLockInit(&pgsi->index_lock_stats->mutex);
+		for (int i = 0; i < PGSI_INDEX_LOCKS_MAX; i++)
+		{
+			pgsi->index_lock_stats->entries[i].indexrelid = InvalidOid;
+			pgsi->index_lock_stats->entries[i].relid = InvalidOid;
+			pgsi->index_lock_stats->entries[i].lock_waits = 0;
+			pgsi->index_lock_stats->entries[i].total_wait_time_ms = 0;
+			pgsi->index_lock_stats->entries[i].last_wait_time = 0;
+			SpinLockInit(&pgsi->index_lock_stats->entries[i].mutex);
+		}
 	}
 
 	info.keysize = sizeof(pgsiHashKey);
@@ -3120,4 +3206,294 @@ comp_location(const void *a, const void *b)
 	else
 		return 0;
 #endif
+}
+
+/*-------------------------------------------------------------------------
+ * Index Size Growth Trends - C Code Implementation
+ *-------------------------------------------------------------------------*/
+
+/*
+ * pg_stat_insights_index_size_snapshot - Capture a snapshot of current index sizes
+ *
+ * This function captures the current size of all user indexes and stores
+ * them in shared memory for trend analysis.
+ *
+ * Returns the timestamp when the snapshot was taken.
+ */
+Datum
+pg_stat_insights_index_size_snapshot(PG_FUNCTION_ARGS)
+{
+	pgsiIndexSizeHistory *history;
+	pgsiIndexSizeSnapshot *snapshot;
+	TimestampTz now;
+	int			slot;
+	Relation	pg_class_rel;
+	SysScanDesc scan;
+	HeapTuple	tuple;
+	int			count;
+	Form_pg_class classForm;
+	Oid			relid;
+
+	if (!pgsi || !pgsi->index_size_history)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("pg_stat_insights: index size tracking not initialized")));
+
+	history = pgsi->index_size_history;
+	now = GetCurrentTimestamp();
+
+	/* Take snapshot of all user indexes */
+	SpinLockAcquire(&history->mutex);
+
+	slot = history->next_slot;
+	if (slot >= PGSI_INDEX_SNAPSHOTS_MAX)
+		slot = 0;				/* Wrap around for circular buffer */
+
+	/* Get current index sizes from system catalogs */
+	pg_class_rel = table_open(RelationRelationId, AccessShareLock);
+	scan = systable_beginscan(pg_class_rel, ClassOidIndexId, true,
+							  NULL, 0, NULL);
+
+	count = 0;
+	while ((tuple = systable_getnext(scan)) != NULL &&
+		   count < PGSI_INDEX_SNAPSHOTS_MAX)
+	{
+		classForm = (Form_pg_class) GETSTRUCT(tuple);
+		relid = classForm->oid;
+
+		/* Only track indexes */
+		if (classForm->relkind != RELKIND_INDEX)
+			continue;
+
+		/* Only track user indexes */
+		if (classForm->relnamespace < FirstNormalObjectId)
+			continue;
+
+		snapshot = &history->snapshots[slot];
+		snapshot->indexrelid = relid;
+		/* Get relation size - use pg_class.relpages for compatibility */
+		{
+			Relation	rel;
+			BlockNumber nblocks;
+
+			rel = relation_open(relid, AccessShareLock);
+#if PG_VERSION_NUM >= 170000
+			nblocks = RelationGetNumberOfBlocks(rel);
+#else
+			/* PostgreSQL 16: use pg_class.relpages */
+			nblocks = rel->rd_rel->relpages;
+			if (nblocks == 0)
+			{
+				/* If relpages is 0, estimate from reltuples */
+				nblocks = (BlockNumber) (rel->rd_rel->reltuples / (BLCKSZ / rel->rd_rel->relnatts));
+				if (nblocks == 0)
+					nblocks = 1;	/* At least 1 block */
+			}
+#endif
+			snapshot->size_bytes = (int64) nblocks * BLCKSZ;
+			relation_close(rel, AccessShareLock);
+		}
+		snapshot->snapshot_time = now;
+		slot++;
+		count++;
+		if (slot >= PGSI_INDEX_SNAPSHOTS_MAX)
+			slot = 0;
+	}
+
+	systable_endscan(scan);
+	table_close(pg_class_rel, AccessShareLock);
+
+	history->next_slot = slot;
+	if (history->num_snapshots < PGSI_INDEX_SNAPSHOTS_MAX)
+		history->num_snapshots = count;
+
+	SpinLockRelease(&history->mutex);
+
+	PG_RETURN_TIMESTAMPTZ(now);
+}
+
+/*
+ * pg_stat_insights_index_size_trends - Get index size growth trends
+ *
+ * Returns a set of rows showing index size snapshots and growth trends.
+ * If indexrelid is provided, returns trends only for that index.
+ */
+Datum
+pg_stat_insights_index_size_trends(PG_FUNCTION_ARGS)
+{
+	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+	TupleDesc	tupdesc;
+	Tuplestorestate *tupstore;
+	MemoryContext per_query_ctx;
+	MemoryContext oldcontext;
+	pgsiIndexSizeHistory *history;
+	Oid			target_index;
+	int			i;
+	pgsiIndexSizeSnapshot *snap;
+	pgsiIndexSizeSnapshot *prev_snap;
+	Datum		values[5];
+	bool		nulls[5];
+	int64		growth;
+	double		time_diff;
+	double		size_mb;
+	double		growth_mb_per_day;
+
+	if (!pgsi || !pgsi->index_size_history)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("pg_stat_insights: index size tracking not initialized")));
+
+	history = pgsi->index_size_history;
+	target_index = PG_ARGISNULL(0) ? InvalidOid : PG_GETARG_OID(0);
+
+	/* Build a tuple descriptor for our result type */
+	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+		elog(ERROR, "return type must be a row type");
+
+	per_query_ctx = rsinfo->econtext->ecxt_per_query_memory;
+	oldcontext = MemoryContextSwitchTo(per_query_ctx);
+
+	tupstore = tuplestore_begin_heap(true, false, work_mem);
+	rsinfo->returnMode = SFRM_Materialize;
+	rsinfo->setResult = tupstore;
+	rsinfo->setDesc = tupdesc;
+
+	MemoryContextSwitchTo(oldcontext);
+
+	SpinLockAcquire(&history->mutex);
+
+	for (i = 0; i < history->num_snapshots; i++)
+	{
+		snap = &history->snapshots[i];
+
+		if (snap->indexrelid == InvalidOid)
+			continue;
+
+		if (target_index != InvalidOid && snap->indexrelid != target_index)
+			continue;
+
+		memset(values, 0, sizeof(values));
+		memset(nulls, 0, sizeof(nulls));
+
+		values[0] = ObjectIdGetDatum(snap->indexrelid);
+		values[1] = Int64GetDatum(snap->size_bytes);
+		size_mb = snap->size_bytes / 1024.0 / 1024.0;
+		values[2] = Float8GetDatum(size_mb);
+		values[3] = TimestampTzGetDatum(snap->snapshot_time);
+
+		/* Calculate growth if we have previous snapshot */
+		if (i > 0)
+		{
+			prev_snap = &history->snapshots[i - 1];
+			if (prev_snap->indexrelid == snap->indexrelid)
+			{
+				growth = snap->size_bytes - prev_snap->size_bytes;
+				/* Convert microseconds to days */
+				time_diff = (snap->snapshot_time - prev_snap->snapshot_time) / 86400000000.0;
+				if (time_diff > 0)
+				{
+					growth_mb_per_day = growth / 1024.0 / 1024.0 / time_diff;
+					values[4] = Float8GetDatum(growth_mb_per_day);
+				}
+				else
+					nulls[4] = true;
+			}
+			else
+				nulls[4] = true;
+		}
+		else
+			nulls[4] = true;
+
+		tuplestore_putvalues(tupstore, tupdesc, values, nulls);
+	}
+
+	SpinLockRelease(&history->mutex);
+
+	/* tuplestore is automatically cleaned up by SRF context */
+	return (Datum) 0;
+}
+
+/*-------------------------------------------------------------------------
+ * Index Lock Contention - C Code Implementation
+ *-------------------------------------------------------------------------*/
+
+/*
+ * pg_stat_insights_index_lock_contention - Get index lock contention statistics
+ *
+ * Returns a set of rows showing lock contention statistics for indexes.
+ * Only returns entries where lock waits have occurred.
+ */
+Datum
+pg_stat_insights_index_lock_contention(PG_FUNCTION_ARGS)
+{
+	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+	TupleDesc	tupdesc;
+	Tuplestorestate *tupstore;
+	MemoryContext per_query_ctx;
+	MemoryContext oldcontext;
+	pgsiIndexLockStats *stats;
+	int			i;
+	pgsiIndexLockEntry *entry;
+	Datum		values[6];
+	bool		nulls[6];
+	double		avg_wait_time;
+
+	if (!pgsi || !pgsi->index_lock_stats)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("pg_stat_insights: index lock tracking not initialized")));
+
+	stats = pgsi->index_lock_stats;
+
+	/* Build a tuple descriptor for our result type */
+	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+		elog(ERROR, "return type must be a row type");
+
+	per_query_ctx = rsinfo->econtext->ecxt_per_query_memory;
+	oldcontext = MemoryContextSwitchTo(per_query_ctx);
+
+	tupstore = tuplestore_begin_heap(true, false, work_mem);
+	rsinfo->returnMode = SFRM_Materialize;
+	rsinfo->setResult = tupstore;
+	rsinfo->setDesc = tupdesc;
+
+	MemoryContextSwitchTo(oldcontext);
+
+	SpinLockAcquire(&stats->mutex);
+
+	for (i = 0; i < stats->num_entries && i < PGSI_INDEX_LOCKS_MAX; i++)
+	{
+		entry = &stats->entries[i];
+
+		if (entry->indexrelid == InvalidOid)
+			continue;
+
+		memset(values, 0, sizeof(values));
+		memset(nulls, 0, sizeof(nulls));
+
+		SpinLockAcquire(&entry->mutex);
+		values[0] = ObjectIdGetDatum(entry->indexrelid);
+		values[1] = ObjectIdGetDatum(entry->relid);
+		values[2] = Int64GetDatum(entry->lock_waits);
+		values[3] = Int64GetDatum(entry->total_wait_time_ms);
+		if (entry->lock_waits > 0)
+		{
+			avg_wait_time = entry->total_wait_time_ms / (double) entry->lock_waits;
+			values[4] = Float8GetDatum(avg_wait_time);
+		}
+		else
+			nulls[4] = true;
+		if (entry->last_wait_time > 0)
+			values[5] = TimestampTzGetDatum(entry->last_wait_time);
+		else
+			nulls[5] = true;
+		SpinLockRelease(&entry->mutex);
+
+		tuplestore_putvalues(tupstore, tupdesc, values, nulls);
+	}
+
+	SpinLockRelease(&stats->mutex);
+
+	/* tuplestore is automatically cleaned up by SRF context */
+	return (Datum) 0;
 }
