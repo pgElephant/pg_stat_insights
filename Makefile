@@ -16,7 +16,9 @@ OBJS = \
 	pg_stat_insights.o
 
 EXTENSION = pg_stat_insights
-DATA = pg_stat_insights--1.0.sql
+DATA = pg_stat_insights--1.0.sql \
+	pg_stat_insights--2.0.sql \
+	pg_stat_insights--1.0--2.0.sql
 PGFILEDESC = "pg_stat_insights - enhanced execution statistics of SQL statements"
 
 LDFLAGS_SL += $(filter -lm, $(LIBS))
