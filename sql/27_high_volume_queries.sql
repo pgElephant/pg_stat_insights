@@ -145,7 +145,7 @@ LIMIT 10;
 -- Test 10: Check histogram distribution
 SELECT 
     COUNT(*) >= 0 AS has_histogram_data,
-    SUM(total_queries) >= 10 AS sufficient_query_volume
+    COUNT(*) >= 10 AS sufficient_query_volume
 FROM pg_stat_insights_histogram_summary;
 
 -- Test 11: Verify WAL generation tracking

@@ -21,7 +21,7 @@ CREATE TEMP TABLE array_test (
 -- Insert deterministic array data
 INSERT INTO array_test (int_array, text_array, numeric_array, jsonb_array, multi_dim_array)
 SELECT 
-  ARRAY[1, 2, 3, 4, 5] + i,
+  ARRAY[1 + i, 2 + i, 3 + i, 4 + i, 5 + i],
   ARRAY['item_' || i, 'value_' || i, 'tag_' || (i % 10)],
   ARRAY[(i * 1.1)::numeric, (i * 2.2)::numeric, (i * 3.3)::numeric],
   ARRAY[
