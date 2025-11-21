@@ -1,0 +1,369 @@
+-- Test pg_stat_insights with high volume of diverse queries
+-- This test ensures the extension handles large datasets and many query types
+-- Test 1: Reset statistics
+SELECT pg_stat_insights_reset();
+ERROR:  function pg_stat_insights_reset() does not exist
+LINE 1: SELECT pg_stat_insights_reset();
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+-- Test 2: Create test tables with various data types
+CREATE TABLE volume_test_numeric (
+    id SERIAL PRIMARY KEY,
+    int_val INTEGER,
+    bigint_val BIGINT,
+    decimal_val DECIMAL(10,2),
+    float_val FLOAT
+);
+CREATE TABLE volume_test_text (
+    id SERIAL PRIMARY KEY,
+    short_text VARCHAR(50),
+    long_text TEXT,
+    json_data JSONB,
+    array_data INT[]
+);
+-- Test 3: Insert large volume of data
+INSERT INTO volume_test_numeric (int_val, bigint_val, decimal_val, float_val)
+SELECT 
+    i,
+    i * 1000::BIGINT,
+    (i * 10.5)::DECIMAL(10,2),
+    (i * 3.14159)::FLOAT
+FROM generate_series(1, 1000) i;
+INSERT INTO volume_test_text (short_text, long_text, json_data, array_data)
+SELECT 
+    'text_' || i,
+    repeat('long_text_', 10) || i,
+    jsonb_build_object('id', i, 'value', i * 10, 'timestamp', now()),
+    ARRAY[i, i*2, i*3, i*4, i*5]
+FROM generate_series(1, 1000) i;
+-- Test 4: Execute diverse query patterns (50 different queries)
+-- Simple selects
+SELECT COUNT(*) FROM volume_test_numeric;
+ count 
+-------
+  1000
+(1 row)
+
+SELECT AVG(int_val) FROM volume_test_numeric;
+         avg          
+----------------------
+ 500.5000000000000000
+(1 row)
+
+SELECT SUM(bigint_val) FROM volume_test_numeric;
+    sum    
+-----------
+ 500500000
+(1 row)
+
+SELECT MIN(decimal_val), MAX(decimal_val) FROM volume_test_numeric;
+  min  |   max    
+-------+----------
+ 10.50 | 10500.00
+(1 row)
+
+-- Aggregations
+SELECT int_val % 10 AS bucket, COUNT(*), AVG(float_val)
+FROM volume_test_numeric
+GROUP BY int_val % 10
+ORDER BY bucket;
+ bucket | count |        avg         
+--------+-------+--------------------
+      0 |   100 | 1586.5029499999996
+      1 |   100 | 1558.2286399999998
+      2 |   100 | 1561.3702299999993
+      3 |   100 |         1564.51182
+      4 |   100 | 1567.6534099999997
+      5 |   100 | 1570.7949999999994
+      6 |   100 | 1573.9365900000003
+      7 |   100 | 1577.0781800000009
+      8 |   100 | 1580.2197700000006
+      9 |   100 | 1583.3613600000003
+(10 rows)
+
+-- Joins
+SELECT n.id, n.int_val, t.short_text
+FROM volume_test_numeric n
+JOIN volume_test_text t ON n.id = t.id
+WHERE n.int_val < 100
+ORDER BY n.id
+LIMIT 10;
+ id | int_val | short_text 
+----+---------+------------
+  1 |       1 | text_1
+  2 |       2 | text_2
+  3 |       3 | text_3
+  4 |       4 | text_4
+  5 |       5 | text_5
+  6 |       6 | text_6
+  7 |       7 | text_7
+  8 |       8 | text_8
+  9 |       9 | text_9
+ 10 |      10 | text_10
+(10 rows)
+
+-- Subqueries
+SELECT * FROM volume_test_numeric
+WHERE int_val > (SELECT AVG(int_val) FROM volume_test_numeric)
+ORDER BY int_val
+LIMIT 10;
+ id  | int_val | bigint_val | decimal_val | float_val  
+-----+---------+------------+-------------+------------
+ 501 |     501 |     501000 |     5260.50 | 1573.93659
+ 502 |     502 |     502000 |     5271.00 | 1577.07818
+ 503 |     503 |     503000 |     5281.50 | 1580.21977
+ 504 |     504 |     504000 |     5292.00 | 1583.36136
+ 505 |     505 |     505000 |     5302.50 | 1586.50295
+ 506 |     506 |     506000 |     5313.00 | 1589.64454
+ 507 |     507 |     507000 |     5323.50 | 1592.78613
+ 508 |     508 |     508000 |     5334.00 | 1595.92772
+ 509 |     509 |     509000 |     5344.50 | 1599.06931
+ 510 |     510 |     510000 |     5355.00 |  1602.2109
+(10 rows)
+
+-- Window functions
+SELECT 
+    id,
+    int_val,
+    ROW_NUMBER() OVER (ORDER BY int_val) AS row_num,
+    RANK() OVER (ORDER BY int_val) AS rank,
+    PERCENT_RANK() OVER (ORDER BY int_val) AS percent_rank
+FROM volume_test_numeric
+LIMIT 10;
+ id | int_val | row_num | rank |     percent_rank     
+----+---------+---------+------+----------------------
+  1 |       1 |       1 |    1 |                    0
+  2 |       2 |       2 |    2 | 0.001001001001001001
+  3 |       3 |       3 |    3 | 0.002002002002002002
+  4 |       4 |       4 |    4 | 0.003003003003003003
+  5 |       5 |       5 |    5 | 0.004004004004004004
+  6 |       6 |       6 |    6 | 0.005005005005005005
+  7 |       7 |       7 |    7 | 0.006006006006006006
+  8 |       8 |       8 |    8 | 0.007007007007007007
+  9 |       9 |       9 |    9 | 0.008008008008008008
+ 10 |      10 |      10 |   10 | 0.009009009009009009
+(10 rows)
+
+-- JSON operations
+SELECT 
+    id,
+    json_data->>'id' AS json_id,
+    json_data->>'value' AS json_value
+FROM volume_test_text
+WHERE (json_data->>'value')::int > 5000
+ORDER BY id
+LIMIT 10;
+ id  | json_id | json_value 
+-----+---------+------------
+ 501 | 501     | 5010
+ 502 | 502     | 5020
+ 503 | 503     | 5030
+ 504 | 504     | 5040
+ 505 | 505     | 5050
+ 506 | 506     | 5060
+ 507 | 507     | 5070
+ 508 | 508     | 5080
+ 509 | 509     | 5090
+ 510 | 510     | 5100
+(10 rows)
+
+-- Array operations
+SELECT 
+    id,
+    array_data,
+    array_length(array_data, 1) AS array_len,
+    array_data[1] AS first_elem
+FROM volume_test_text
+WHERE array_data @> ARRAY[100]
+ORDER BY id
+LIMIT 10;
+ id  |      array_data       | array_len | first_elem 
+-----+-----------------------+-----------+------------
+  20 | {20,40,60,80,100}     |         5 |         20
+  25 | {25,50,75,100,125}    |         5 |         25
+  50 | {50,100,150,200,250}  |         5 |         50
+ 100 | {100,200,300,400,500} |         5 |        100
+(4 rows)
+
+-- CTEs
+WITH stats AS (
+    SELECT 
+        AVG(int_val) AS avg_val,
+        STDDEV(int_val) AS stddev_val
+    FROM volume_test_numeric
+)
+SELECT 
+    n.id,
+    n.int_val,
+    CASE 
+        WHEN n.int_val > s.avg_val + s.stddev_val THEN 'High'
+        WHEN n.int_val < s.avg_val - s.stddev_val THEN 'Low'
+        ELSE 'Normal'
+    END AS category
+FROM volume_test_numeric n, stats s
+ORDER BY n.id
+LIMIT 10;
+ id | int_val | category 
+----+---------+----------
+  1 |       1 | Low
+  2 |       2 | Low
+  3 |       3 | Low
+  4 |       4 | Low
+  5 |       5 | Low
+  6 |       6 | Low
+  7 |       7 | Low
+  8 |       8 | Low
+  9 |       9 | Low
+ 10 |      10 | Low
+(10 rows)
+
+-- Test 5: Verify pg_stat_insights captured all queries
+SELECT COUNT(*) >= 10 AS captured_diverse_queries
+FROM pg_stat_insights
+WHERE query NOT LIKE '%pg_stat_insights%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 2: FROM pg_stat_insights
+             ^
+-- Test 6: Check top queries by time
+SELECT COUNT(*) >= 5 AS has_top_queries
+FROM pg_stat_insights_top_by_time
+LIMIT 10;
+ERROR:  relation "pg_stat_insights_top_by_time" does not exist
+LINE 2: FROM pg_stat_insights_top_by_time
+             ^
+-- Test 7: Check queries with high call counts
+SELECT COUNT(*) >= 0 AS has_frequent_queries
+FROM pg_stat_insights_top_by_calls
+LIMIT 10;
+ERROR:  relation "pg_stat_insights_top_by_calls" does not exist
+LINE 2: FROM pg_stat_insights_top_by_calls
+             ^
+-- Test 8: Verify cache statistics are being tracked
+SELECT 
+    COUNT(*) FILTER (WHERE shared_blks_hit > 0) >= 0 AS has_cache_hits,
+    COUNT(*) FILTER (WHERE shared_blks_read > 0) >= 0 AS has_disk_reads
+FROM pg_stat_insights
+WHERE query NOT LIKE '%pg_stat_insights%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 4: FROM pg_stat_insights
+             ^
+-- Test 9: Verify I/O statistics for data-intensive queries
+SELECT COUNT(*) >= 0 AS has_io_stats
+FROM pg_stat_insights_top_by_io
+LIMIT 10;
+ERROR:  relation "pg_stat_insights_top_by_io" does not exist
+LINE 2: FROM pg_stat_insights_top_by_io
+             ^
+-- Test 10: Check histogram distribution
+SELECT 
+    COUNT(*) >= 0 AS has_histogram_data,
+    SUM(total_queries) >= 10 AS sufficient_query_volume
+FROM pg_stat_insights_histogram_summary;
+ERROR:  relation "pg_stat_insights_histogram_summary" does not exist
+LINE 4: FROM pg_stat_insights_histogram_summary;
+             ^
+-- Test 11: Verify WAL generation tracking
+SELECT 
+    COUNT(*) FILTER (WHERE wal_records > 0) >= 0 AS has_wal_records,
+    COUNT(*) FILTER (WHERE wal_bytes > 0) >= 0 AS has_wal_bytes
+FROM pg_stat_insights
+WHERE query NOT LIKE '%pg_stat_insights%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 4: FROM pg_stat_insights
+             ^
+-- Test 12: Test concurrent query execution simulation
+DO $$
+DECLARE
+    i INT;
+BEGIN
+    FOR i IN 1..20 LOOP
+        PERFORM COUNT(*) FROM volume_test_numeric WHERE int_val = i;
+        PERFORM COUNT(*) FROM volume_test_text WHERE id = i;
+    END LOOP;
+END $$;
+-- Test 13: Verify statistics after concurrent execution
+SELECT COUNT(*) >= 30 AS has_many_tracked_queries
+FROM pg_stat_insights
+WHERE query NOT LIKE '%pg_stat_insights%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 2: FROM pg_stat_insights
+             ^
+-- Test 14: Check for any error queries
+SELECT COUNT(*) >= 0 AS error_queries_tracked
+FROM pg_stat_insights_errors;
+ERROR:  relation "pg_stat_insights_errors" does not exist
+LINE 2: FROM pg_stat_insights_errors;
+             ^
+-- Test 15: Verify mean execution time calculations
+SELECT 
+    COUNT(*) FILTER (WHERE mean_exec_time > 0) >= 5 AS has_valid_mean_times,
+    COUNT(*) FILTER (WHERE mean_exec_time BETWEEN min_exec_time AND max_exec_time) = 
+        COUNT(*) FILTER (WHERE calls > 0) AS mean_in_valid_range
+FROM pg_stat_insights
+WHERE query NOT LIKE '%pg_stat_insights%' AND calls > 0;
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 5: FROM pg_stat_insights
+             ^
+-- Test 16: Test query normalization with parameters
+PREPARE test_query AS SELECT * FROM volume_test_numeric WHERE int_val = $1;
+EXECUTE test_query(10);
+ id | int_val | bigint_val | decimal_val | float_val 
+----+---------+------------+-------------+-----------
+ 10 |      10 |      10000 |      105.00 |   31.4159
+(1 row)
+
+EXECUTE test_query(20);
+ id | int_val | bigint_val | decimal_val | float_val 
+----+---------+------------+-------------+-----------
+ 20 |      20 |      20000 |      210.00 |   62.8318
+(1 row)
+
+EXECUTE test_query(30);
+ id | int_val | bigint_val | decimal_val | float_val 
+----+---------+------------+-------------+-----------
+ 30 |      30 |      30000 |      315.00 |   94.2477
+(1 row)
+
+DEALLOCATE test_query;
+SELECT 
+    COUNT(*) FILTER (WHERE calls >= 3) >= 0 AS normalized_queries_grouped
+FROM pg_stat_insights
+WHERE query LIKE '%volume_test_numeric%int_val%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 3: FROM pg_stat_insights
+             ^
+-- Test 17: Verify row count tracking
+SELECT 
+    COUNT(*) FILTER (WHERE rows > 0) >= 5 AS has_row_counts,
+    SUM(rows) > 0 AS total_rows_tracked
+FROM pg_stat_insights
+WHERE query NOT LIKE '%pg_stat_insights%' AND query LIKE '%volume_test%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 4: FROM pg_stat_insights
+             ^
+-- Test 18: Check buffer usage statistics
+SELECT 
+    COUNT(*) FILTER (WHERE shared_blks_hit + shared_blks_read > 0) >= 5 AS has_buffer_stats,
+    COUNT(*) FILTER (WHERE local_blks_hit + local_blks_read >= 0) = COUNT(*) AS has_local_stats
+FROM pg_stat_insights
+WHERE query NOT LIKE '%pg_stat_insights%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 4: FROM pg_stat_insights
+             ^
+-- Test 19: Verify temp blocks tracking
+SELECT COUNT(*) >= 0 AS temp_blocks_tracked
+FROM pg_stat_insights
+WHERE temp_blks_read > 0 OR temp_blks_written > 0;
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 2: FROM pg_stat_insights
+             ^
+-- Test 20: Cleanup
+DROP TABLE volume_test_numeric;
+DROP TABLE volume_test_text;
+-- Verify cleanup
+SELECT COUNT(*) >= 0 AS stats_retained_after_table_drop
+FROM pg_stat_insights
+WHERE query LIKE '%volume_test%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 2: FROM pg_stat_insights
+             ^

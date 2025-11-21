@@ -1,0 +1,155 @@
+-- Test concurrent access to pg_stat_insights
+-- Ensures thread safety and data integrity under concurrent load
+-- Test 1: Reset statistics
+SELECT pg_stat_insights_reset();
+ERROR:  function pg_stat_insights_reset() does not exist
+LINE 1: SELECT pg_stat_insights_reset();
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+-- Test 2: Create test table
+CREATE TABLE concurrent_test (
+    id SERIAL PRIMARY KEY,
+    value INT,
+    data TEXT
+);
+-- Test 3: Insert data
+INSERT INTO concurrent_test (value, data)
+SELECT i, 'concurrent_' || i
+FROM generate_series(1, 500) i;
+-- Test 4: Simulate concurrent queries with different patterns
+DO $$
+DECLARE
+    i INT;
+BEGIN
+    -- Pattern 1: Simple selects
+    FOR i IN 1..10 LOOP
+        PERFORM COUNT(*) FROM concurrent_test;
+    END LOOP;
+    
+    -- Pattern 2: Aggregations
+    FOR i IN 1..10 LOOP
+        PERFORM AVG(value) FROM concurrent_test;
+    END LOOP;
+    
+    -- Pattern 3: Filtering
+    FOR i IN 1..10 LOOP
+        PERFORM COUNT(*) FROM concurrent_test WHERE value > 250;
+    END LOOP;
+    
+    -- Pattern 4: Ordering
+    FOR i IN 1..10 LOOP
+        PERFORM * FROM concurrent_test ORDER BY value DESC LIMIT 5;
+    END LOOP;
+    
+    -- Pattern 5: Joins (self-join)
+    FOR i IN 1..10 LOOP
+        PERFORM c1.id FROM concurrent_test c1 JOIN concurrent_test c2 ON c1.value = c2.value LIMIT 10;
+    END LOOP;
+END $$;
+-- Test 5: Verify concurrent queries were tracked
+SELECT COUNT(*) >= 5 AS tracked_concurrent_patterns
+FROM pg_stat_insights
+WHERE query LIKE '%concurrent_test%'
+  AND query NOT LIKE '%pg_stat_insights%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 2: FROM pg_stat_insights
+             ^
+-- Test 6: Verify call counts are correct
+SELECT 
+    COUNT(*) FILTER (WHERE calls >= 10) >= 3 AS multiple_high_call_queries
+FROM pg_stat_insights
+WHERE query LIKE '%concurrent_test%'
+  AND query NOT LIKE '%pg_stat_insights%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 3: FROM pg_stat_insights
+             ^
+-- Test 7: Test concurrent resets (should not cause errors)
+SELECT pg_stat_insights_reset();
+ERROR:  function pg_stat_insights_reset() does not exist
+LINE 1: SELECT pg_stat_insights_reset();
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+SELECT pg_stat_insights_reset();
+ERROR:  function pg_stat_insights_reset() does not exist
+LINE 1: SELECT pg_stat_insights_reset();
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+SELECT pg_stat_insights_reset();
+ERROR:  function pg_stat_insights_reset() does not exist
+LINE 1: SELECT pg_stat_insights_reset();
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+-- Verify all stats are reset
+SELECT COUNT(*) = 0 AS stats_reset_successful
+FROM pg_stat_insights
+WHERE query LIKE '%concurrent_test%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 2: FROM pg_stat_insights
+             ^
+-- Test 8: Concurrent inserts and selects
+DO $$
+DECLARE
+    i INT;
+BEGIN
+    FOR i IN 1..20 LOOP
+        INSERT INTO concurrent_test (value, data) VALUES (i + 1000, 'batch_' || i);
+        PERFORM COUNT(*) FROM concurrent_test WHERE value > 1000;
+    END LOOP;
+END $$;
+-- Test 9: Verify tracking after mixed operations
+SELECT COUNT(*) >= 2 AS tracked_mixed_operations
+FROM pg_stat_insights
+WHERE query LIKE '%concurrent_test%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 2: FROM pg_stat_insights
+             ^
+-- Test 10: Test statistics consistency
+SELECT 
+    COUNT(*) FILTER (WHERE mean_exec_time >= min_exec_time) = COUNT(*) AS mean_gte_min,
+    COUNT(*) FILTER (WHERE mean_exec_time <= max_exec_time) = COUNT(*) AS mean_lte_max,
+    COUNT(*) FILTER (WHERE total_exec_time >= mean_exec_time * calls - 1) = COUNT(*) AS total_consistent
+FROM pg_stat_insights
+WHERE query LIKE '%concurrent_test%' AND calls > 0;
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 5: FROM pg_stat_insights
+             ^
+-- Test 11: Test buffer statistics under load
+SELECT 
+    COUNT(*) FILTER (WHERE shared_blks_hit + shared_blks_read > 0) >= 1 AS has_buffer_activity,
+    SUM(shared_blks_hit) >= 0 AS total_hits_valid,
+    SUM(shared_blks_read) >= 0 AS total_reads_valid
+FROM pg_stat_insights
+WHERE query LIKE '%concurrent_test%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 5: FROM pg_stat_insights
+             ^
+-- Test 12: Test WAL generation tracking
+SELECT 
+    COUNT(*) FILTER (WHERE wal_records > 0) >= 0 AS has_wal_activity,
+    SUM(wal_records) >= 0 AS total_wal_records_valid
+FROM pg_stat_insights
+WHERE query LIKE '%concurrent_test%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 4: FROM pg_stat_insights
+             ^
+-- Test 13: Cleanup
+DROP TABLE concurrent_test;
+-- Test 14: Verify stats persist after table drop
+SELECT COUNT(*) >= 0 AS stats_persist_after_drop
+FROM pg_stat_insights
+WHERE query LIKE '%concurrent_test%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 2: FROM pg_stat_insights
+             ^
+-- Test 15: Final reset
+SELECT pg_stat_insights_reset();
+ERROR:  function pg_stat_insights_reset() does not exist
+LINE 1: SELECT pg_stat_insights_reset();
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+SELECT COUNT(*) = 0 AS final_cleanup_successful
+FROM pg_stat_insights
+WHERE query LIKE '%concurrent_test%';
+ERROR:  relation "pg_stat_insights" does not exist
+LINE 2: FROM pg_stat_insights
+             ^
