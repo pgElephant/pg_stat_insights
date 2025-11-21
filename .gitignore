@@ -4,9 +4,19 @@
 *.dylib
 *.a
 *.bc
+*.dll
+*.exe
+
+# PostgreSQL extension build artifacts
+pg_stat_insights.o
+pg_stat_insights.so
+pg_stat_insights.dylib
+pg_stat_insights.dll
 
 # Backup files
 *.bak
+*.backup
+*~
 
 # Test artifacts
 results/
@@ -19,13 +29,86 @@ output_iso/
 test_results.log
 test_db/
 *.out.diff
+*.diff
+
+# Meson build directories
+build/
+builddir/
+meson-private/
+meson-info/
+meson-logs/
+
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+.conda/
+
+# Documentation build outputs
+docs/_build/
+docs/.doctrees/
+site/
+.mkdocs_cache/
 
 # Editor files
 .vscode/
 .idea/
 *.swp
-*~
+*.swo
+*.swn
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
 
 # OS files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+Desktop.ini
+
+# Coverage reports
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
+*.cover
+.hypothesis/
+
+# Compiled translation files (binary)
+*.mo
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.pid
+*.lock
+
+# PostgreSQL specific
+pg_stat_insights.conf
+postgresql.conf.local
+*.conf.local
+
+# IDE specific
+*.iml
+*.ipr
+*.iws
+.cache/
+
+# Package files
+*.tar.gz
+*.zip
+*.deb
+*.rpm
+
+# Local configuration
+.env
+.env.local
+*.local
