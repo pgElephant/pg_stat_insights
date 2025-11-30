@@ -462,8 +462,6 @@ EXECUTE prep_numeric(50, 150);
 EXECUTE prep_text('item_%');
  id  |  name   | value  |  status  |        created_at        
 -----+---------+--------+----------+--------------------------
-   2 | item_2  | 888.88 | pending  | Fri Oct 31 12:00:00 2025
-   3 | item_3  | 777.77 | active   | Fri Oct 31 12:00:00 2025
    4 | item_4  |   10.0 | inactive | Fri Oct 31 12:00:00 2025
    5 | item_5  |   12.5 | pending  | Fri Oct 31 12:00:00 2025
    6 | item_6  |   15.0 | active   | Fri Oct 31 12:00:00 2025
@@ -583,6 +581,8 @@ EXECUTE prep_text('item_%');
  120 | item_20 |  300.0 | active   | Fri Oct 31 12:00:00 2025
  121 | item_21 |  302.5 | inactive | Fri Oct 31 12:00:00 2025
  122 | item_22 |  305.0 | pending  | Fri Oct 31 12:00:00 2025
+   2 | item_2  | 888.88 | pending  | Fri Oct 31 12:00:00 2025
+   3 | item_3  | 777.77 | active   | Fri Oct 31 12:00:00 2025
  123 | item_23 |  307.5 | active   | Fri Oct 31 12:00:00 2025
  124 | item_24 |  310.0 | inactive | Fri Oct 31 12:00:00 2025
  125 | item_25 |  312.5 | pending  | Fri Oct 31 12:00:00 2025

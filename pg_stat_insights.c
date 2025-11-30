@@ -386,6 +386,7 @@ PG_FUNCTION_INFO_V1(pg_stat_insights_info);
 PG_FUNCTION_INFO_V1(pg_stat_insights_index_size_snapshot);
 PG_FUNCTION_INFO_V1(pg_stat_insights_index_size_trends);
 PG_FUNCTION_INFO_V1(pg_stat_insights_index_lock_contention);
+PG_FUNCTION_INFO_V1(pg_stat_insights_index_maintenance_cost);
 
 
 static void pgsi_shmem_request(void);
@@ -431,7 +432,7 @@ static pgsiEntry *entry_alloc(pgsiHashKey *key, Size query_offset, int query_len
 static void entry_dealloc(void);
 static bool qtext_store(const char *query, int query_len,
 						Size *query_offset, int *gc_count);
-static char *qtext_load_file(Size *buffer_size);
+static char *qtext_load_file(Size *buffer_size, Size expected_extent);
 static char *qtext_fetch(Size query_offset, int query_len,
 						 char *buffer, Size buffer_size);
 static bool need_gc_qtexts(void);
@@ -869,7 +870,7 @@ pgsi_shmem_shutdown(int code, Datum arg)
 	if (fwrite(&num_entries, sizeof(int32), 1, file) != 1)
 		goto error;
 
-	qbuffer = qtext_load_file(&qbuffer_size);
+	qbuffer = qtext_load_file(&qbuffer_size, 0);
 	if (qbuffer == NULL)
 		goto error;
 
@@ -1808,8 +1809,14 @@ pg_stat_insights_internal(FunctionCallInfo fcinfo,
 	pgsiEntry  *entry;
 
 	/*
-	 * Superusers or roles with the privileges of pg_read_all_stats members
-	 * are allowed
+	 * Check access privileges before acquiring any locks.  Superusers or
+	 * roles with the privileges of pg_read_all_stats members can see query
+	 * text for all users.  Other users can only see their own query text.
+	 *
+	 * This check is intentionally done before lock acquisition to align with
+	 * pg_stat_statements semantics.  If the intent is to extend privilege
+	 * checks for additional roles, consider documenting those roles here and
+	 * extending the check accordingly.
 	 */
 	is_allowed_role = has_privs_of_role(userid, ROLE_PG_READ_ALL_STATS);
 
@@ -1825,6 +1832,18 @@ pg_stat_insights_internal(FunctionCallInfo fcinfo,
 	 * Check we have the expected number of output arguments.  Aside from
 	 * being a good safety check, we need a kluge here to detect API version
 	 * 1.1, which was wedged into the code in an ill-considered way.
+	 *
+	 * NOTE: This approach relies on column count to infer API version, which
+	 * is brittle.  When adding new API versions or modifying column counts,
+	 * remember to update:
+	 * 1. The column count defines (PG_STAT_STATEMENTS_COLS_V1_X)
+	 * 2. This switch statement
+	 * 3. The Assert at the end of the tuple building loop
+	 * 4. All the conditional field appending logic below
+	 *
+	 * Consider centralizing per-version column metadata in the future to
+	 * avoid scattered checks and reduce the risk of runtime errors when
+	 * schemas evolve.
 	 */
 	switch (rsinfo->setDesc->natts)
 	{
@@ -1897,7 +1916,7 @@ pg_stat_insights_internal(FunctionCallInfo fcinfo,
 
 		/* No point in loading file now if there are active writers */
 		if (n_writers == 0)
-			qbuffer = qtext_load_file(&qbuffer_size);
+			qbuffer = qtext_load_file(&qbuffer_size, 0);
 	}
 
 	/*
@@ -1930,7 +1949,9 @@ pg_stat_insights_internal(FunctionCallInfo fcinfo,
 			pgsi->gc_count != gc_count)
 		{
 			free(qbuffer);
-			qbuffer = qtext_load_file(&qbuffer_size);
+			/* Re-read extent after acquiring lock for validation */
+			extent = pgsi->extent;
+			qbuffer = qtext_load_file(&qbuffer_size, extent);
 		}
 	}
 
@@ -2044,9 +2065,15 @@ pg_stat_insights_internal(FunctionCallInfo fcinfo,
 				 * the sample variance, as we have data for the whole
 				 * population, so Bessel's correction is not used, and we
 				 * don't divide by tmp.calls - 1.
+				 *
+				 * Guard against division by zero if calls is 0 (should not
+				 * happen for non-sticky entries, but defensive programming
+				 * prevents NaNs from entering the SRF output).
 				 */
 				if (tmp.calls[kind] > 1)
 					stddev = sqrt(tmp.sum_var_time[kind] / tmp.calls[kind]);
+				else if (tmp.calls[kind] == 0)
+					stddev = 0.0;	/* Guard against division by zero */
 				else
 					stddev = 0.0;
 				values[i++] = Float8GetDatumFast(stddev);
@@ -2437,8 +2464,13 @@ error:
 	if (fd >= 0)
 		CloseTransientFile(fd);
 
-	/* Mark our write complete */
+	/*
+	 * Rollback the extent increment since the write failed.  This prevents
+	 * leaving holes in the file that would accelerate garbage collection
+	 * triggers.
+	 */
 	SpinLockAcquire(&pgsi->mutex);
+	pgsi->extent = off;
 	pgsi->n_writers--;
 	SpinLockRelease(&pgsi->mutex);
 
@@ -2453,11 +2485,15 @@ error:
  *
  * On success, the buffer size is also returned into *buffer_size.
  *
+ * If expected_extent is non-zero, validate that the file size matches
+ * the expected extent.  This should be used when a lock is held to ensure
+ * the file hasn't been concurrently truncated or grown unexpectedly.
+ *
  * This can be called without any lock on pgsi->lock, but in that case
  * the caller is responsible for verifying that the result is sane.
  */
 static char *
-qtext_load_file(Size *buffer_size)
+qtext_load_file(Size *buffer_size, Size expected_extent)
 {
 	char	   *buf;
 	int			fd;
@@ -2482,6 +2518,23 @@ qtext_load_file(Size *buffer_size)
 				(errcode_for_file_access(),
 				 errmsg("could not stat file \"%s\": %m",
 						PGSI_TEXT_FILE)));
+		CloseTransientFile(fd);
+		return NULL;
+	}
+
+	/*
+	 * Validate file size against expected extent if provided.  This helps
+	 * detect concurrent truncation or corruption when a lock is held.  Note
+	 * that the file may be larger than expected_extent if concurrent writes
+	 * occurred (which is safe since those writes aren't referenced yet), but
+	 * it should not be smaller, as that would indicate truncation or corruption.
+	 */
+	if (expected_extent > 0 && stat.st_size < expected_extent)
+	{
+		ereport(LOG,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("query text file size mismatch: expected at least %zu bytes, got %lld",
+						expected_extent, (long long) stat.st_size)));
 		CloseTransientFile(fd);
 		return NULL;
 	}
@@ -2557,8 +2610,17 @@ qtext_fetch(Size query_offset, int query_len,
 	if (buffer == NULL)
 		return NULL;
 	/* Bogus offset/length? */
-	if (query_len < 0 ||
-		query_offset + query_len >= buffer_size)
+	if (query_len < 0)
+		return NULL;
+	/*
+	 * Check bounds carefully to avoid integer overflow.  We check:
+	 * 1. query_len doesn't exceed buffer_size
+	 * 2. query_offset doesn't exceed buffer_size - query_len (avoiding
+	 *    overflow in the addition)
+	 * 3. There's room for the trailing null byte
+	 */
+	if ((Size) query_len > buffer_size ||
+		query_offset > buffer_size - (Size) query_len - 1)
 		return NULL;
 	/* As a further sanity check, make sure there's a trailing null */
 	if (buffer[query_offset + query_len] != '\0')
@@ -2630,6 +2692,7 @@ gc_qtexts(void)
 	HASH_SEQ_STATUS hash_seq;
 	pgsiEntry  *entry;
 	Size		extent;
+	Size		old_extent;
 	int			nentries;
 
 	/*
@@ -2646,8 +2709,14 @@ gc_qtexts(void)
 	 * to leave things alone on an OOM failure, but the problem is that the
 	 * file is only going to get bigger; hoping for a future non-OOM result is
 	 * risky and can easily lead to complete denial of service.
+	 *
+	 * We have an exclusive lock, so we can safely read extent and validate
+	 * the file size matches it.  Save old_extent for logging later.
 	 */
-	qbuffer = qtext_load_file(&qbuffer_size);
+	SpinLockAcquire(&pgsi->mutex);
+	old_extent = pgsi->extent;
+	SpinLockRelease(&pgsi->mutex);
+	qbuffer = qtext_load_file(&qbuffer_size, old_extent);
 	if (qbuffer == NULL)
 		goto gc_fail;
 
@@ -2724,7 +2793,7 @@ gc_qtexts(void)
 	}
 
 	elog(DEBUG1, "pgsi gc of queries file shrunk size from %zu to %zu",
-		 pgsi->extent, extent);
+		 old_extent, extent);
 
 	/* Reset the shared extent pointer */
 	pgsi->extent = extent;
@@ -3493,6 +3562,116 @@ pg_stat_insights_index_lock_contention(PG_FUNCTION_ARGS)
 	}
 
 	SpinLockRelease(&stats->mutex);
+
+	/* tuplestore is automatically cleaned up by SRF context */
+	return (Datum) 0;
+}
+
+/*-------------------------------------------------------------------------
+ * Index Maintenance Cost Estimation - C Code Implementation
+ *-------------------------------------------------------------------------*/
+
+/*
+ * pg_stat_insights_index_maintenance_cost - Estimate REINDEX time and cost
+ *
+ * Provides time estimates for REINDEX operations based on index size
+ * and system performance characteristics.
+ */
+Datum
+pg_stat_insights_index_maintenance_cost(PG_FUNCTION_ARGS)
+{
+	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+	TupleDesc	tupdesc;
+	Tuplestorestate *tupstore;
+	MemoryContext per_query_ctx;
+	MemoryContext oldcontext;
+	Relation	pg_class_rel;
+	SysScanDesc scan;
+	HeapTuple	tuple;
+	Form_pg_class classForm;
+	int64		index_size_bytes;
+	double		index_size_mb;
+	double		estimated_time_minutes;
+	double		estimated_cost_mb_per_min = 75.0;  /* Conservative: 75 MB/min */
+	Datum		values[5];
+	bool		nulls[5];
+
+	/* Build a tuple descriptor for our result type */
+	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+		elog(ERROR, "return type must be a row type");
+
+	per_query_ctx = rsinfo->econtext->ecxt_per_query_memory;
+	oldcontext = MemoryContextSwitchTo(per_query_ctx);
+
+	tupstore = tuplestore_begin_heap(true, false, work_mem);
+	rsinfo->returnMode = SFRM_Materialize;
+	rsinfo->setResult = tupstore;
+	rsinfo->setDesc = tupdesc;
+
+	MemoryContextSwitchTo(oldcontext);
+
+	pg_class_rel = table_open(RelationRelationId, AccessShareLock);
+	scan = systable_beginscan(pg_class_rel, ClassOidIndexId, true, NULL, 0, NULL);
+
+		while ((tuple = systable_getnext(scan)) != NULL)
+	{
+		classForm = (Form_pg_class) GETSTRUCT(tuple);
+
+		if (classForm->relkind != RELKIND_INDEX)
+			continue;
+
+		/* Skip system catalogs */
+		if (classForm->relnamespace < FirstNormalObjectId)
+			continue;
+
+		/* Get relation size using RelationGetNumberOfBlocks */
+		{
+			Relation	rel;
+			BlockNumber nblocks;
+
+			rel = relation_open(classForm->oid, AccessShareLock);
+#if PG_VERSION_NUM >= 170000
+			nblocks = RelationGetNumberOfBlocks(rel);
+#else
+			/* PostgreSQL 16: use pg_class.relpages */
+			nblocks = rel->rd_rel->relpages;
+			if (nblocks == 0)
+			{
+				/* If relpages is 0, estimate from reltuples */
+				nblocks = (BlockNumber) (rel->rd_rel->reltuples / (BLCKSZ / rel->rd_rel->relnatts));
+				if (nblocks == 0)
+					nblocks = 1;	/* At least 1 block */
+			}
+#endif
+			index_size_bytes = (int64) nblocks * BLCKSZ;
+			relation_close(rel, AccessShareLock);
+		}
+		index_size_mb = index_size_bytes / 1024.0 / 1024.0;
+
+		/* Estimate: ~75 MB/min for REINDEX (conservative estimate) */
+		if (index_size_mb > 0)
+		{
+			estimated_time_minutes = index_size_mb / estimated_cost_mb_per_min;
+		}
+		else
+		{
+			estimated_time_minutes = 0.0;
+		}
+
+		memset(values, 0, sizeof(values));
+		memset(nulls, 0, sizeof(nulls));
+
+		values[0] = ObjectIdGetDatum(classForm->oid);
+		values[1] = Int64GetDatum(index_size_bytes);
+		values[2] = Float8GetDatum(index_size_mb);
+		values[3] = Float8GetDatum(estimated_time_minutes);
+		values[4] = Float8GetDatum(estimated_cost_mb_per_min);
+
+		tuplestore_putvalues(tupstore, tupdesc, values, nulls);
+	}
+
+	systable_endscan(scan);
+	table_close(pg_class_rel, AccessShareLock);
 
 	/* tuplestore is automatically cleaned up by SRF context */
 	return (Datum) 0;

@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: pg_stat_insights 1.0\n"
+"Project-Id-Version: pg_stat_insights 3.0\n"
 "Report-Msgid-Bugs-To: team@pgelephant.org\n"
 "POT-Creation-Date: 2025-01-29 12:00+0000\n"
 "PO-Revision-Date: 2025-01-29 12:00+0000\n"
@@ -32,6 +32,10 @@ msgid "pg_stat_insights must be loaded via shared_preload_libraries"
 msgstr "pg_stat_insights必須透過shared_preload_libraries載入"
 
 #: pg_stat_insights.c
+msgid "pg_stat_insights must be loaded via \"shared_preload_libraries\""
+msgstr "pg_stat_insights必須透過\"shared_preload_libraries\"載入"
+
+#: pg_stat_insights.c
 msgid "Insufficient shared memory for pg_stat_insights"
 msgstr "pg_stat_insights的共用記憶體不足"
 
@@ -55,3 +59,38 @@ msgstr "統計資訊收集已停用"
 msgid "Extension initialization complete"
 msgstr "擴充功能初始化完成"
 
+#: pg_stat_insights.c
+msgid "pg_stat_insights: out of memory for query entry"
+msgstr "pg_stat_insights: 查詢項目記憶體不足"
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights: normalized query buffer overflow, truncating"
+msgstr "pg_stat_insights: 正規化查詢緩衝區溢位，正在截斷"
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights: normalized query buffer overflow at end"
+msgstr "pg_stat_insights: 正規化查詢緩衝區在結尾溢位"
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights: index size tracking not initialized"
+msgstr "pg_stat_insights: 索引大小追蹤未初始化"
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights: index lock tracking not initialized"
+msgstr "pg_stat_insights: 索引鎖定追蹤未初始化"
+
+#: pg_stat_insights.c
+msgid "incorrect number of output arguments"
+msgstr "輸出參數數量不正確"
+
+#: pg_stat_insights.c
+msgid "return type must be a row type"
+msgstr "返回類型必須是行類型"
+
+#: pg_stat_insights.c
+msgid "out of memory"
+msgstr "記憶體不足"
+
+#: pg_stat_insights.c
+msgid "Could not allocate enough memory to read file \"%s\"."
+msgstr "無法分配足夠的記憶體來讀取檔案\"%s\"。"

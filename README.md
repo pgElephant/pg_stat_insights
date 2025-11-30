@@ -1,64 +1,33 @@
-# pg_stat_insights - PostgreSQL Performance Monitoring Extension
+# pg_stat_insights
 
-> **Advanced PostgreSQL query performance monitoring, SQL optimization, and database analytics extension**
-> 
-> Monitor slow queries • Track cache efficiency • Analyze WAL generation • Optimize database performance • Real-time metrics • Grafana dashboards
+PostgreSQL extension for query performance monitoring.
 
-## Language Support / 多言語対応 / 多语言支持
+## Language Support
 
-**[English](#overview)** (current) | **[简体中文](docs/zh_CN/README.md)** | **[繁體中文](docs/zh_TW/README.md)** | **[日本語](docs/ja_JP/README.md)**
-
-<div align="center">
-
-**Track 52 Metrics Across 24 Views - Monitor PostgreSQL Query Performance & Replication in Real-Time**
-
-*Production-ready extension for PostgreSQL 16, 17, 18 - Drop-in replacement for pg_stat_statements with enhanced analytics*
-
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20|%2017%20|%2018-blue.svg)](https://www.postgresql.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![Tests](https://img.shields.io/badge/tests-25%2F25%20passing-brightgreen.svg)]()
-[![Metrics](https://img.shields.io/badge/metrics-52_columns-brightgreen.svg)]()
-[![Documentation](https://img.shields.io/badge/docs-github.io-blue.svg)](https://pgelephant.github.io/pg_stat_insights/)
-
-![52 Columns and 24 Views](https://img.shields.io/badge/52_Columns-24_Views-success?style=for-the-badge)
-
-</div>
-
----
+[English](#overview) | [简体中文](docs/zh_CN/README.md) | [繁體中文](docs/zh_TW/README.md) | [日本語](docs/ja_JP/README.md)
 
 ## Overview
 
-**PostgreSQL Query Performance Monitoring Made Simple**
+pg_stat_insights tracks query performance in PostgreSQL. It records 52 metrics across 42 views. It monitors query execution, cache efficiency, WAL generation, replication health, and index usage.
 
-`pg_stat_insights` is an advanced PostgreSQL extension for **database performance monitoring**, **query optimization**, and **SQL analytics**. Track and analyze **52 comprehensive metrics** across **24 pre-built views** to identify slow queries, optimize cache performance, monitor replication health (physical & logical), detect bottlenecks, and debug replication issues in real-time.
+Works with PostgreSQL 16, 17, and 18.
 
-**Perfect for:**
-- Database Administrators monitoring PostgreSQL performance
-- DevOps teams tracking query performance and resource usage
-- Developers optimizing SQL queries and database operations
-- SREs implementing database monitoring and alerting
+## Features
 
-**Key Features:**
-- **52 metric columns** - Execution time, cache hits, WAL generation, JIT stats, buffer I/O
-- **24 pre-built views** - Instant access to top slow queries, cache misses, I/O intensive operations, comprehensive replication monitoring (physical & logical) with bottleneck detection, subscription tracking, publication management, and health diagnostics
-- **11 parameters** - Fine-tune tracking, histograms, and statistics collection
-- **Drop-in replacement** for pg_stat_statements with enhanced metrics
-- **PostgreSQL 16-18** - Full compatibility with PostgreSQL 16, 17, and 18
-- **Response time tracking** - Categorize queries by execution time (less than 1ms to greater than 10s)
-- **Replication monitoring** - 16 specialized views for physical & logical replication health, lag tracking, and diagnostics
-- **Cache analysis** - Identify buffer cache inefficiencies and optimization opportunities
-- **WAL monitoring** - Track write-ahead log generation per query
-- **Advanced features** - JSON/JSONB, arrays, partitioning, triggers, window functions
-- **Time-series data** - Historical performance trending and bucket analysis
-- **Prometheus/Grafana ready** - Pre-built dashboards and alert rules included
-- **CI/CD ready** - GitHub Actions workflows for multi-version testing
+- 52 metric columns: execution time, cache hits, WAL generation, JIT stats, buffer I/O
+- 42 views: slow queries, cache misses, I/O operations, replication monitoring, index monitoring
+- 11 configuration parameters
+- Replaces pg_stat_statements with additional metrics
+- Response time tracking: categories from less than 1ms to greater than 10s
+- Replication monitoring: 17 views for physical and logical replication
+- Index monitoring: 11 views for index usage, bloat, efficiency, and maintenance
+- Cache analysis: buffer cache efficiency metrics
+- WAL monitoring: write-ahead log generation per query
+- Time-series data: historical performance trends by time bucket
 
----
+## Quick Start
 
-## Quick Start - Install in 3 Steps
-
-**Monitor PostgreSQL query performance in under 5 minutes:**
+Install in 3 steps:
 
 ```sql
 -- Step 1: Enable extension in PostgreSQL configuration
@@ -68,7 +37,7 @@ ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_insights';
 -- Step 2: Create the extension in your database
 CREATE EXTENSION pg_stat_insights;
 
--- Step 3: View your slowest queries instantly
+-- Step 3: View your slowest queries
 SELECT 
     query,
     calls,
@@ -79,27 +48,18 @@ FROM pg_stat_insights_top_by_time
 LIMIT 10;
 ```
 
-**Result:** Instant visibility into query performance, execution times, cache efficiency, and resource usage across your PostgreSQL database.
-
----
-
 ## Documentation
 
-**Complete documentation available at:**
+Complete documentation: [pgelephant.github.io/pg_stat_insights](https://pgelephant.github.io/pg_stat_insights/)
 
-### [pgelephant.github.io/pg_stat_insights](https://pgelephant.github.io/pg_stat_insights/)
-
-**Quick Links:**
-
-- [Getting Started](https://pgelephant.github.io/pg_stat_insights/getting-started/) - Installation and setup
-- [Configuration](https://pgelephant.github.io/pg_stat_insights/configuration/) - All 11 parameters
-- [Views Reference](https://pgelephant.github.io/pg_stat_insights/views/) - All 24 views
-- [Metrics Guide](https://pgelephant.github.io/pg_stat_insights/metrics/) - All 52 columns
-- [Usage Examples](https://pgelephant.github.io/pg_stat_insights/usage/) - 50+ SQL queries
-- [Prometheus & Grafana](https://pgelephant.github.io/pg_stat_insights/prometheus-grafana/) - Monitoring integration
-- [Troubleshooting](https://pgelephant.github.io/pg_stat_insights/troubleshooting/) - Common issues
-
----
+Quick links:
+- [Getting Started](https://pgelephant.github.io/pg_stat_insights/getting-started/)
+- [Configuration](https://pgelephant.github.io/pg_stat_insights/configuration/)
+- [Views Reference](https://pgelephant.github.io/pg_stat_insights/views/)
+- [Metrics Guide](https://pgelephant.github.io/pg_stat_insights/metrics/)
+- [Usage Examples](https://pgelephant.github.io/pg_stat_insights/usage/)
+- [Prometheus & Grafana](https://pgelephant.github.io/pg_stat_insights/prometheus-grafana/)
+- [Troubleshooting](https://pgelephant.github.io/pg_stat_insights/troubleshooting/)
 
 ## Installation
 
@@ -120,13 +80,13 @@ sudo systemctl restart postgresql
 psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
 ```
 
-**Detailed instructions:** [Installation Guide](https://pgelephant.github.io/pg_stat_insights/install/)
-
----
+Detailed instructions: [Installation Guide](https://pgelephant.github.io/pg_stat_insights/install/)
 
 ## Views
 
-All 24 pre-built views:
+42 views organized by category:
+
+### Query Performance Views (10 views)
 
 | View | Purpose |
 |------|---------|
@@ -140,129 +100,199 @@ All 24 pre-built views:
 | `pg_stat_insights_plan_errors` | Plan estimation issues |
 | `pg_stat_insights_histogram_summary` | Response time distribution |
 | `pg_stat_insights_by_bucket` | Time-series aggregation |
+
+### Replication Monitoring Views (17 views)
+
+| View | Purpose |
+|------|---------|
 | `pg_stat_insights_replication` | Basic replication monitoring |
-| `pg_stat_insights_physical_replication` | Physical replication with enhanced metrics and health status |
+| `pg_stat_insights_physical_replication` | Physical replication with health status |
 | `pg_stat_insights_logical_replication` | Logical replication slots with lag tracking |
-| `pg_stat_insights_replication_slots` | All replication slots (physical + logical) with health status |
+| `pg_stat_insights_replication_slots` | All replication slots with health status |
 | `pg_stat_insights_replication_summary` | Overall replication activity summary |
 | `pg_stat_insights_replication_alerts` | Critical alerts for lag, WAL loss, and inactive slots |
 | `pg_stat_insights_replication_wal` | WAL statistics and retention analysis |
-| `pg_stat_insights_replication_bottlenecks` | Identify network, I/O, or replay bottlenecks |
+| `pg_stat_insights_replication_bottlenecks` | Network, I/O, or replay bottlenecks |
 | `pg_stat_insights_replication_conflicts` | Logical replication conflict detection |
-| `pg_stat_insights_replication_health` | Comprehensive health check with recommendations |
+| `pg_stat_insights_replication_health` | Health check with recommendations |
 | `pg_stat_insights_replication_performance` | Performance trends and throughput analysis |
 | `pg_stat_insights_replication_timeline` | Historical timeline and lag trends |
 | `pg_stat_insights_subscriptions` | Logical replication subscriptions (subscriber side) |
 | `pg_stat_insights_subscription_stats` | Per-table subscription sync status |
 | `pg_stat_insights_publications` | Logical replication publications (publisher side) |
-| `pg_stat_insights_replication_origins` | Replication origin tracking (cascading/bidirectional) |
+| `pg_stat_insights_replication_origins` | Replication origin tracking |
 | `pg_stat_insights_replication_dashboard` | Single comprehensive JSON dashboard |
 
-**Complete reference:** [Views Documentation](https://pgelephant.github.io/pg_stat_insights/views/)
+### Index Monitoring Views (11 views)
 
----
+| View | Purpose |
+|------|---------|
+| `pg_stat_insights_indexes` | Index statistics with usage metrics |
+| `pg_stat_insights_index_usage` | Index scan frequency and utilization |
+| `pg_stat_insights_index_bloat` | Index bloat detection and size estimation |
+| `pg_stat_insights_index_efficiency` | Index efficiency metrics and cache performance |
+| `pg_stat_insights_index_maintenance` | Maintenance recommendations and statistics |
+| `pg_stat_insights_missing_indexes` | Potential missing indexes based on sequential scans |
+| `pg_stat_insights_index_summary` | Overall index health summary |
+| `pg_stat_insights_index_alerts` | Critical alerts for unused, bloated, or missing indexes |
+| `pg_stat_insights_index_dashboard` | Single comprehensive index monitoring dashboard |
+| `pg_stat_insights_index_size_trends` | Historical index size growth trends |
+| `pg_stat_insights_index_lock_contention` | Index lock contention statistics |
 
-## Why Choose pg_stat_insights?
+### Time-Series Bucket Views (4 views)
 
-**Solve Common PostgreSQL Performance Problems:**
+| View | Purpose |
+|------|---------|
+| `pg_stat_insights_by_bucket` | Query performance by time bucket |
+| `pg_stat_insights_index_by_bucket` | Index usage statistics by hour bucket |
+| `pg_stat_insights_index_size_by_bucket` | Index size trends by day bucket |
+| `pg_stat_insights_replication_by_bucket` | Replication statistics by hour bucket |
+| `pg_stat_insights_replication_lag_by_bucket` | Replication lag trends by hour bucket |
 
-- **Find slow queries** - Identify queries consuming excessive execution time and resources
-- **Optimize cache usage** - Detect buffer cache misses and improve shared_buffers efficiency
-- **Reduce WAL overhead** - Monitor write-ahead log generation per query type
-- **Track query patterns** - Analyze execution frequency, response times, and resource consumption
-- **Monitor replication** - Comprehensive physical and logical replication monitoring with bottleneck detection
-- **Troubleshoot lag** - Identify network, I/O, or replay bottlenecks with actionable recommendations
-- **Monitor in real-time** - Integrate with Grafana for live dashboards and alerting
-- **PostgreSQL best practices** - Built following PostgreSQL coding standards and conventions
+Bucket views track performance trends over time. Hourly buckets group index usage and replication statistics. Daily buckets group index size growth. They identify growing, shrinking, stable, or volatile patterns. Lag analysis monitors replication lag trends with severity classification.
+
+Complete reference: [Views Documentation](https://pgelephant.github.io/pg_stat_insights/views/)
+
+## Use Cases
+
+- Find slow queries: identify queries consuming excessive execution time
+- Optimize cache usage: detect buffer cache misses
+- Reduce WAL overhead: monitor write-ahead log generation per query
+- Track query patterns: analyze execution frequency and resource consumption
+- Monitor replication: physical and logical replication monitoring with bottleneck detection
+- Troubleshoot lag: identify network, I/O, or replay bottlenecks
+- Optimize indexes: identify unused indexes, detect bloat, find missing indexes
+- Monitor index health: track index usage, size trends, lock contention
+- Monitor in real-time: integrate with Grafana for dashboards and alerting
 
 ## Comparison with Other Extensions
 
-| Feature | pg_stat_statements | pg_stat_monitor | **pg_stat_insights** |
-|---------|:------------------:|:---------------:|:--------------------:|
-| **Metric Columns** | 44 | 58 | **52** |
-| **Pre-built Views** | 2 | 5 | **24** |
-| **Configuration Options** | 5 | 12 | **11** |
-| **Cache Analysis** | Basic | Basic | **Enhanced with ratios** |
-| **Response Time Categories** | No | No | **Yes (<1ms to >10s)** |
-| **Time-Series Tracking** | No | No | **Yes (bucket-based)** |
-| **Replication Monitoring** | No | No | **16 specialized views** |
-| **Bottleneck Detection** | No | No | **Network/I/O/Replay analysis** |
-| **Logical Replication** | No | No | **Subscriptions/Publications** |
-| **Documentation** | Basic | Medium | **30+ pages on GitHub Pages** |
-| **Prometheus Integration** | Manual | Manual | **Pre-built queries & dashboards** |
-
-**See detailed comparison:** [Feature Comparison](https://pgelephant.github.io/pg_stat_insights/comparison/)
-
----
+| Feature | pg_stat_statements | pg_stat_monitor | pg_stat_insights |
+|---------|:------------------:|:---------------:|:----------------:|
+| Metric Columns | 44 | 58 | 52 |
+| Pre-built Views | 2 | 5 | 42 |
+| Configuration Options | 5 | 12 | 11 |
+| Cache Analysis | Basic | Basic | Enhanced with ratios |
+| Response Time Categories | No | No | Yes |
+| Time-Series Tracking | No | No | Yes |
+| Replication Monitoring | No | No | 17 views |
+| Index Monitoring | No | No | 11 views |
+| Bottleneck Detection | No | No | Network/I/O/Replay analysis |
+| Logical Replication | No | No | Subscriptions/Publications |
+| Index Bloat Detection | No | No | Yes |
+| Missing Index Detection | No | No | Yes |
+| Documentation | Basic | Medium | 30+ pages |
+| Prometheus Integration | Manual | Manual | Pre-built queries and dashboards |
 
 ## Replication Monitoring
 
-**Comprehensive Physical & Logical Replication Monitoring:**
+Physical and logical replication monitoring:
 
 ### Physical Replication (8 views)
-- **Health monitoring** - Replica status with HEALTHY/WARNING/CRITICAL classifications
-- **Bottleneck detection** - Identify network, disk I/O, or replay bottlenecks
-- **Performance rating** - Excellent to Critical based on lag thresholds
-- **WAL tracking** - Monitor WAL retention and disk usage
-- **Alerts** - Automated threshold-based alerting for lag and issues
+- Health monitoring: replica status with HEALTHY/WARNING/CRITICAL classifications
+- Bottleneck detection: identify network, disk I/O, or replay bottlenecks
+- Performance rating: Excellent to Critical based on lag thresholds
+- WAL tracking: monitor WAL retention and disk usage
+- Alerts: threshold-based alerting for lag and issues
 
 ### Logical Replication (7 views)
-- **Subscription tracking** - Monitor subscriber health and sync status
-- **Publication management** - Track publisher configuration and active subscribers
-- **Per-table sync** - Monitor table-level replication progress
-- **Conflict detection** - Identify and troubleshoot replication conflicts
-- **WAL safety** - Track WAL segment availability and retention
+- Subscription tracking: monitor subscriber health and sync status
+- Publication management: track publisher configuration and active subscribers
+- Per-table sync: monitor table-level replication progress
+- Conflict detection: identify and troubleshoot replication conflicts
+- WAL safety: track WAL segment availability and retention
 
 ### Unified Dashboard (1 view)
-- **JSON dashboard** - Single comprehensive view with all replication metrics
-- **Grafana/Prometheus ready** - Structured output for monitoring systems
-- **Complete status** - Physical replicas, logical slots, alerts in one query
+- JSON dashboard: single view with all replication metrics
+- Grafana/Prometheus ready: structured output for monitoring systems
+- Complete status: physical replicas, logical slots, alerts in one query
 
-**Learn more:** [Replication Monitoring Guide](https://pgelephant.github.io/pg_stat_insights/views/)
+Learn more: [Replication Monitoring Guide](https://pgelephant.github.io/pg_stat_insights/views/)
 
----
+## Index Monitoring
 
-## Database Monitoring with Prometheus & Grafana
+Index analytics and optimization:
 
-**Real-Time PostgreSQL Metrics Visualization:**
+### Index Usage and Efficiency (4 views)
+- Usage tracking: monitor index scan frequency and utilization
+- Efficiency metrics: cache hit ratios, scan types, performance indicators
+- Size trends: historical index size growth tracking
+- Lock contention: identify indexes with high lock contention
 
-Turn pg_stat_insights data into actionable dashboards and alerts for PostgreSQL database monitoring:
+### Index Health and Maintenance (4 views)
+- Bloat detection: identify bloated indexes with size estimation
+- Maintenance recommendations: REINDEX and VACUUM suggestions
+- Health summary: overall index statistics and status
+- Alerts: critical alerts for unused, bloated, or missing indexes
 
-- **Prometheus integration** - 5 pre-configured queries for postgres_exporter
-- **Grafana dashboards** - 8 ready-to-use panels for query performance visualization
-- **Alert rules** - 11 production-ready alerts for database health monitoring
-- **Query rate tracking** - Monitor queries per second (QPS) and throughput
-- **Cache performance** - Real-time buffer cache hit ratio monitoring
-- **Response time SLA** - Track P95/P99 query latency for service level objectives
-- **WAL generation alerts** - Monitor write-ahead log growth and disk usage
+### Index Optimization (3 views)
+- Missing indexes: identify potential missing indexes based on sequential scans
+- Comprehensive dashboard: single view with all index metrics
+- Detailed statistics: complete index information with correlation and partial index usage
 
-**Complete Prometheus/Grafana guide:** [Monitoring Integration](https://pgelephant.github.io/pg_stat_insights/prometheus-grafana/)
+Features:
+- Bloat estimation: calculate estimated bloat size and percentage
+- Usage patterns: track index scans, index-only scans, sequential scans
+- Maintenance tracking: monitor last VACUUM and ANALYZE operations
+- Size monitoring: track index size growth over time
+- Lock analysis: identify indexes with high lock contention
 
----
+Learn more: [Index Monitoring Guide](https://pgelephant.github.io/pg_stat_insights/views/)
+
+## Prometheus and Grafana Integration
+
+PostgreSQL metrics visualization:
+
+- Prometheus integration: 5 pre-configured queries for postgres_exporter
+- Grafana dashboards: 8 panels for query performance visualization
+- Alert rules: 11 alerts for database health monitoring
+- Query rate tracking: monitor queries per second (QPS) and throughput
+- Cache performance: buffer cache hit ratio monitoring
+- Response time SLA: track P95/P99 query latency
+- WAL generation alerts: monitor write-ahead log growth and disk usage
+- Replication monitoring: dashboards for replication health and lag
+- Index monitoring: panels for index usage, bloat, and efficiency
+
+Complete Prometheus/Grafana guide: [Monitoring Integration](https://pgelephant.github.io/pg_stat_insights/prometheus-grafana/)
+
+## Version History
+
+### Version 3.0 (Current)
+- Index Monitoring: 11 views for index analytics
+- Index bloat detection: automatic bloat estimation and alerts
+- Missing index detection: identify potential missing indexes
+- Index size trends: historical size growth tracking
+- Index lock contention: lock statistics and analysis
+- Index efficiency metrics: cache performance and scan type analysis
+- Index maintenance recommendations: REINDEX and VACUUM suggestions
+
+### Version 2.0
+- Replication Monitoring: 16 views for physical and logical replication
+- Physical replication: health monitoring, bottleneck detection, performance rating
+- Logical replication: subscription tracking, publication management, conflict detection
+- Replication alerts: threshold-based alerting
+- Replication dashboard: single comprehensive JSON view
+
+### Version 1.0
+- Query Performance: 10 views for query analysis
+- 52 metric columns: execution statistics
+- Response time tracking: time-based categorization
+- Cache analysis: buffer cache efficiency metrics
+- WAL monitoring: write-ahead log generation tracking
+
+See: [Release Notes](RELEASE_NOTES_2.0.md) for detailed changelog
 
 ## License
 
-MIT License - Copyright (c) 2024-2025, pgElephant, Inc.
+MIT License. Copyright (c) 2024-2025, pgElephant, Inc.
 
 See [LICENSE](LICENSE) for details.
-
----
 
 ## Links
 
 - [Complete Documentation](https://pgelephant.github.io/pg_stat_insights/)
-- [Interactive Demo](https://www.pgelephant.com/pg-stat-insights) - Try pg_stat_insights online
-- [Blog Article](https://www.pgelephant.com/blog/pg-stat-insights) - Comprehensive guide and best practices
+- [Interactive Demo](https://www.pgelephant.com/pg-stat-insights)
+- [Blog Article](https://www.pgelephant.com/blog/pg-stat-insights)
 - [GitHub Repository](https://github.com/pgelephant/pg_stat_insights)
 - [Report Issues](https://github.com/pgelephant/pg_stat_insights/issues)
 - [Discussions](https://github.com/pgelephant/pg_stat_insights/discussions)
-
----
-
-<div align="center">
-
-**Built by [pgElephant, Inc.](https://pgelephant.com)**
-
-*Making PostgreSQL monitoring better, one metric at a time*
-
-</div>

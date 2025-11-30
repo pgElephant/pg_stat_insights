@@ -26,18 +26,23 @@ SELECT proname FROM pg_proc WHERE proname LIKE 'pg_stat_insights%' ORDER BY pron
 
 -- Check that all views exist
 SELECT viewname FROM pg_views WHERE viewname LIKE 'pg_stat_insights%' ORDER BY viewname;
-                 viewname                 
-------------------------------------------
+                  viewname                  
+--------------------------------------------
  pg_stat_insights
  pg_stat_insights_by_bucket
  pg_stat_insights_errors
  pg_stat_insights_histogram_summary
  pg_stat_insights_index_alerts
  pg_stat_insights_index_bloat
+ pg_stat_insights_index_by_bucket
  pg_stat_insights_index_dashboard
+ pg_stat_insights_index_duplicates
  pg_stat_insights_index_efficiency
  pg_stat_insights_index_lock_contention
  pg_stat_insights_index_maintenance
+ pg_stat_insights_index_maintenance_cost
+ pg_stat_insights_index_maintenance_history
+ pg_stat_insights_index_size_by_bucket
  pg_stat_insights_index_size_trends
  pg_stat_insights_index_summary
  pg_stat_insights_index_usage
@@ -50,9 +55,11 @@ SELECT viewname FROM pg_views WHERE viewname LIKE 'pg_stat_insights%' ORDER BY v
  pg_stat_insights_replication
  pg_stat_insights_replication_alerts
  pg_stat_insights_replication_bottlenecks
+ pg_stat_insights_replication_by_bucket
  pg_stat_insights_replication_conflicts
  pg_stat_insights_replication_dashboard
  pg_stat_insights_replication_health
+ pg_stat_insights_replication_lag_by_bucket
  pg_stat_insights_replication_origins
  pg_stat_insights_replication_performance
  pg_stat_insights_replication_slots
@@ -66,7 +73,7 @@ SELECT viewname FROM pg_views WHERE viewname LIKE 'pg_stat_insights%' ORDER BY v
  pg_stat_insights_top_by_io
  pg_stat_insights_top_by_time
  pg_stat_insights_top_cache_misses
-(38 rows)
+(45 rows)
 
 -- Verify function signatures
 \df pg_stat_insights_reset

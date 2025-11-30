@@ -10,17 +10,19 @@
 
 <div align="center">
 
-**52 のメトリクスを 11 のビューで追跡 - PostgreSQL クエリパフォーマンスをリアルタイムで監視**
+**52 のメトリクスを 42 のビューで追跡 - PostgreSQL クエリパフォーマンス、レプリケーション、インデックスをリアルタイムで監視**
 
 *PostgreSQL 16、17、18 向けのプロダクション対応拡張機能 - 強化された分析機能を持つ pg_stat_statements の代替品*
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20|%2017%20|%2018-blue.svg)](https://www.postgresql.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/pgelephant/pg_stat_insights/blob/main/LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-31%2F31%20passing-brightgreen.svg)]()
 [![Metrics](https://img.shields.io/badge/metrics-52_columns-brightgreen.svg)]()
 [![Documentation](https://img.shields.io/badge/docs-github.io-blue.svg)](https://pgelephant.github.io/pg_stat_insights/)
+[![Version](https://img.shields.io/badge/version-3.0-blue.svg)]()
 
-![52 カラムメトリクス、11 ビュー](https://img.shields.io/badge/52_カラム-11_ビュー-success?style=for-the-badge)
+![52 カラムメトリクス、42 ビュー](https://img.shields.io/badge/52_カラム-42_ビュー-success?style=for-the-badge)
 
 </div>
 
@@ -30,25 +32,29 @@
 
 **PostgreSQL クエリパフォーマンス監視をシンプルに**
 
-`pg_stat_insights` は、**データベースパフォーマンス監視**、**クエリ最適化**、および **SQL 分析**のための高度な PostgreSQL 拡張機能です。**52 の包括的なメトリクス**を追跡・分析し、**11 の事前構築されたビュー**を通じて遅いクエリの特定、キャッシュパフォーマンスの最適化、リアルタイムでのデータベース健全性の監視を実現します。
+`pg_stat_insights` は、**データベースパフォーマンス監視**、**クエリ最適化**、**レプリケーション健全性**、および**インデックス分析**のための高度な PostgreSQL 拡張機能です。**52 の包括的なメトリクス**を追跡・分析し、**42 の事前構築されたビュー**を通じて遅いクエリの特定、キャッシュパフォーマンスの最適化、レプリケーション健全性の監視（物理および論理）、ボトルネックの検出、インデックス使用の分析、欠落インデックスの識別、インデックス肥大の追跡、リアルタイムでのデータベース問題のデバッグ、時間序列バケット分析を含む包括的な監視を実現します。
 
 **最適な用途：**
 - PostgreSQL パフォーマンスを監視するデータベース管理者
 - クエリパフォーマンスとリソース使用状況を追跡する DevOps チーム
 - SQL クエリとデータベース操作を最適化する開発者
 - データベース監視とアラートを実装する SRE
+- インデックス効率と肥大を分析するパフォーマンスエンジニア
 
 **主な機能：**
 - **52 のメトリクスカラム** - 実行時間、キャッシュヒット、WAL 生成、JIT 統計、バッファ I/O
-- **11 の事前構築ビュー** - 最も遅いクエリ、キャッシュミス、I/O 集約的な操作への即座のアクセス
+- **42 の事前構築ビュー** - 最も遅いクエリ、キャッシュミス、I/O 集約的な操作、包括的なレプリケーション監視（物理および論理）とボトルネック検出、サブスクリプション追跡、パブリケーション管理、健全性診断、完全なインデックス監視、時間序列バケット分析への即座のアクセス
 - **11 のパラメータ** - トラッキング、ヒストグラム、統計収集の微調整
 - **直接置換** - 強化されたメトリクスを持つ pg_stat_statements の代替
-- **PostgreSQL 16-18** - 最新の PostgreSQL バージョンとの完全な互換性
-- **レスポンスタイム追跡** - 実行時間によるクエリの分類（<1ms から >10s）
+- **PostgreSQL 16-18** - PostgreSQL 16、17、18 との完全な互換性
+- **レスポンスタイム追跡** - 実行時間によるクエリの分類（1ms 未満から 10s 超）
+- **レプリケーション監視** - 物理および論理レプリケーション健全性、ラグ追跡、診断のための 17 の専門ビュー
+- **インデックス監視** - インデックス使用、肥大、効率、メンテナンス、欠落インデックス、アラートのための 11 の包括的ビュー
 - **キャッシュ分析** - バッファキャッシュの非効率性と最適化の機会を特定
 - **WAL 監視** - クエリごとの先行書き込みログの生成を追跡
-- **時系列データ** - 履歴パフォーマンストレンドとバケット分析
+- **時系列データ** - クエリ、インデックス、レプリケーションの履歴パフォーマンストレンドとバケット分析
 - **Prometheus/Grafana 対応** - 事前構築されたダッシュボードとアラートルールを含む
+- **31 の回帰テスト** - すべての機能の包括的なテストカバレッジ
 
 ---
 
@@ -89,7 +95,7 @@ LIMIT 10;
 
 - [はじめに](https://pgelephant.github.io/pg_stat_insights/getting-started/) - インストールとセットアップ
 - [設定](https://pgelephant.github.io/pg_stat_insights/configuration/) - すべての 11 パラメータ
-- [ビューリファレンス](https://pgelephant.github.io/pg_stat_insights/views/) - すべての 11 ビュー
+- [ビューリファレンス](https://pgelephant.github.io/pg_stat_insights/views/) - すべての 42 ビュー
 - [メトリクスガイド](https://pgelephant.github.io/pg_stat_insights/metrics/) - すべての 52 カラム
 - [使用例](https://pgelephant.github.io/pg_stat_insights/usage/) - 50+ SQL クエリ
 - [Prometheus & Grafana](https://pgelephant.github.io/pg_stat_insights/prometheus-grafana/) - 監視統合
@@ -122,7 +128,9 @@ psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
 
 ## ビュー
 
-すべての 11 の事前構築ビュー：
+すべての 42 の事前構築ビューをカテゴリ別に整理：
+
+### クエリパフォーマンスビュー（10 ビュー）
 
 | ビュー | 目的 |
 |------|---------|
@@ -136,7 +144,23 @@ psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
 | `pg_stat_insights_plan_errors` | プラン推定の問題 |
 | `pg_stat_insights_histogram_summary` | レスポンスタイムの分布 |
 | `pg_stat_insights_by_bucket` | 時系列集計 |
-| `pg_stat_insights_replication` | レプリケーション監視 |
+
+### レプリケーション監視ビュー（17 ビュー）
+
+物理レプリケーション、論理レプリケーション、サブスクリプション、パブリケーション、レプリケーションオリジン、包括的ダッシュボードビューを含む。
+
+### インデックス監視ビュー（11 ビュー）
+
+インデックス使用、肥大検出、効率指標、メンテナンス推奨、欠落インデックス、アラート、サイズトレンドビューを含む。
+
+### 時系列バケットビュー（4 つの新規ビュー）
+
+| ビュー | 目的 |
+|------|---------|
+| `pg_stat_insights_index_by_bucket` | 時間バケット別のインデックス使用統計 |
+| `pg_stat_insights_index_size_by_bucket` | 日次バケット別のインデックスサイズトレンド |
+| `pg_stat_insights_replication_by_bucket` | 時間バケット別のレプリケーション統計 |
+| `pg_stat_insights_replication_lag_by_bucket` | 時間バケット別のレプリケーションラグトレンド |
 
 **完全なリファレンス：** [ビュードキュメント](https://pgelephant.github.io/pg_stat_insights/views/)
 
@@ -158,7 +182,7 @@ psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
 | 機能 | pg_stat_statements | pg_stat_monitor | **pg_stat_insights** |
 |---------|:------------------:|:---------------:|:--------------------:|
 | **メトリクスカラム** | 44 | 58 | **52** |
-| **事前構築ビュー** | 2 | 5 | **11** |
+| **事前構築ビュー** | 2 | 5 | **42** |
 | **設定オプション** | 5 | 12 | **11** |
 | **キャッシュ分析** | 基本 | 基本 | **比率付き拡張** |
 | **レスポンスタイム分類** | なし | なし | **あり（<1ms から >10s）** |
@@ -176,7 +200,7 @@ psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
 **品質保証のための包括的な TAP テストスイート：**
 - **16 のテストファイル**がすべての拡張機能をカバー
 - **150 のテストケース**で 100% のコードカバレッジ
-- すべての 52 メトリクスカラム、11 ビュー、11 パラメータをテスト
+- すべての 52 メトリクスカラム、42 ビュー、11 パラメータをテスト
 - カスタム StatsInsightManager.pm フレームワーク
 - 外部 Perl 依存関係不要
 - PostgreSQL 18 テストインフラストラクチャと互換

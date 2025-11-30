@@ -10,17 +10,19 @@
 
 <div align="center">
 
-**追蹤 52 個指標，11 個檢視 - 即時監控 PostgreSQL 查詢效能**
+**追蹤 52 個指標，42 個檢視 - 即時監控 PostgreSQL 查詢效能、複寫和索引**
 
 *適用於 PostgreSQL 16、17、18 的生產就緒擴充套件 - pg_stat_statements 的增強型替代品*
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20|%2017%20|%2018-blue.svg)](https://www.postgresql.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/pgelephant/pg_stat_insights/blob/main/LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-31%2F31%20passing-brightgreen.svg)]()
 [![Metrics](https://img.shields.io/badge/metrics-52_columns-brightgreen.svg)]()
 [![Documentation](https://img.shields.io/badge/docs-github.io-blue.svg)](https://pgelephant.github.io/pg_stat_insights/)
+[![Version](https://img.shields.io/badge/version-3.0-blue.svg)]()
 
-![52 欄指標，11 個檢視](https://img.shields.io/badge/52_欄-11_檢視-success?style=for-the-badge)
+![52 欄指標，42 個檢視](https://img.shields.io/badge/52_欄-42_檢視-success?style=for-the-badge)
 
 </div>
 
@@ -30,25 +32,29 @@
 
 **簡化 PostgreSQL 查詢效能監控**
 
-`pg_stat_insights` 是一個進階的 PostgreSQL 擴充套件，用於**資料庫效能監控**、**查詢最佳化**和 **SQL 分析**。追蹤和分析 **52 個綜合指標**，透過 **11 個預建檢視**識別慢查詢、最佳化快取效能並即時監控資料庫健康狀況。
+`pg_stat_insights` 是一個進階的 PostgreSQL 擴充套件，用於**資料庫效能監控**、**查詢最佳化**、**複寫健康**和**索引分析**。追蹤和分析 **52 個綜合指標**，透過 **42 個預建檢視**識別慢查詢、最佳化快取效能、監控複寫健康（實體和邏輯）、偵測瓶頸、分析索引使用、識別缺失索引、追蹤索引膨脹，並即時除錯資料庫問題，包括時間序列桶分析。
 
 **適用於：**
 - 監控 PostgreSQL 效能的資料庫管理員
 - 追蹤查詢效能和資源使用的 DevOps 團隊
 - 最佳化 SQL 查詢和資料庫操作的開發人員
 - 實施資料庫監控和警報的 SRE
+- 分析索引效率和膨脹的效能工程師
 
 **主要特性：**
 - **52 個指標欄** - 執行時間、快取命中、WAL 產生、JIT 統計、緩衝區 I/O
-- **11 個預建檢視** - 立即存取最慢查詢、快取未命中、I/O 密集型操作
+- **42 個預建檢視** - 立即存取最慢查詢、快取未命中、I/O 密集型操作、全面的複寫監控（實體和邏輯）和瓶頸偵測、訂閱追蹤、發布管理、健康診斷、完整的索引監控和時間序列桶分析
 - **11 個參數** - 微調追蹤、直方圖和統計收集
 - **直接替換** pg_stat_statements，具有增強的指標
-- **PostgreSQL 16-18** - 與最新 PostgreSQL 版本完全相容
-- **回應時間追蹤** - 按執行時間對查詢進行分類（<1ms 到 >10s）
+- **PostgreSQL 16-18** - 與 PostgreSQL 16、17 和 18 完全相容
+- **回應時間追蹤** - 按執行時間對查詢進行分類（小於 1ms 到大於 10s）
+- **複寫監控** - 17 個專門檢視用於實體和邏輯複寫健康、延遲追蹤和診斷
+- **索引監控** - 11 個綜合檢視用於索引使用、膨脹、效率、維護、缺失索引和警報
 - **快取分析** - 識別緩衝區快取低效率和最佳化機會
 - **WAL 監控** - 追蹤每個查詢的預寫日誌產生
-- **時間序列資料** - 歷史效能趨勢和桶分析
+- **時間序列資料** - 查詢、索引和複寫的歷史效能趨勢和桶分析
 - **Prometheus/Grafana 就緒** - 包含預建的儀表板和警報規則
+- **31 個迴歸測試** - 所有功能的全面測試覆蓋
 
 ---
 
@@ -89,7 +95,7 @@ LIMIT 10;
 
 - [入門指南](https://pgelephant.github.io/pg_stat_insights/getting-started/) - 安裝和設定
 - [設定](https://pgelephant.github.io/pg_stat_insights/configuration/) - 所有 11 個參數
-- [檢視參考](https://pgelephant.github.io/pg_stat_insights/views/) - 所有 11 個檢視
+- [檢視參考](https://pgelephant.github.io/pg_stat_insights/views/) - 所有 42 個檢視
 - [指標指南](https://pgelephant.github.io/pg_stat_insights/metrics/) - 所有 52 欄
 - [使用範例](https://pgelephant.github.io/pg_stat_insights/usage/) - 50+ SQL 查詢
 - [Prometheus & Grafana](https://pgelephant.github.io/pg_stat_insights/prometheus-grafana/) - 監控整合
@@ -122,7 +128,9 @@ psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
 
 ## 檢視
 
-所有 11 個預建檢視：
+所有 42 個預建檢視按類別組織：
+
+### 查詢效能檢視（10 個檢視）
 
 | 檢視 | 用途 |
 |------|---------|
@@ -136,7 +144,23 @@ psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
 | `pg_stat_insights_plan_errors` | 計畫估算問題 |
 | `pg_stat_insights_histogram_summary` | 回應時間分布 |
 | `pg_stat_insights_by_bucket` | 時間序列彙總 |
-| `pg_stat_insights_replication` | 複寫監控 |
+
+### 複寫監控檢視（17 個檢視）
+
+包括實體複寫、邏輯複寫、訂閱、發布、複寫來源和綜合儀表板檢視。
+
+### 索引監控檢視（11 個檢視）
+
+包括索引使用、膨脹偵測、效率指標、維護建議、缺失索引、警報和大小趨勢檢視。
+
+### 時間序列桶檢視（4 個新檢視）
+
+| 檢視 | 用途 |
+|------|---------|
+| `pg_stat_insights_index_by_bucket` | 按小時桶的索引使用統計 |
+| `pg_stat_insights_index_size_by_bucket` | 按天桶的索引大小趨勢 |
+| `pg_stat_insights_replication_by_bucket` | 按小時桶的複寫統計 |
+| `pg_stat_insights_replication_lag_by_bucket` | 按小時桶的複寫延遲趨勢 |
 
 **完整參考：** [檢視文件](https://pgelephant.github.io/pg_stat_insights/views/)
 
@@ -158,7 +182,7 @@ psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
 | 特性 | pg_stat_statements | pg_stat_monitor | **pg_stat_insights** |
 |---------|:------------------:|:---------------:|:--------------------:|
 | **指標欄** | 44 | 58 | **52** |
-| **預建檢視** | 2 | 5 | **11** |
+| **預建檢視** | 2 | 5 | **42** |
 | **設定選項** | 5 | 12 | **11** |
 | **快取分析** | 基礎 | 基礎 | **增強比率** |
 | **回應時間分類** | 否 | 否 | **是（<1ms 到 >10s）** |
@@ -176,7 +200,7 @@ psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
 **全面的 TAP 測試套件，確保品質：**
 - **16 個測試檔案**涵蓋所有擴充套件功能
 - **150 個測試案例**，100% 程式碼覆蓋率
-- 測試所有 52 個指標欄、11 個檢視、11 個參數
+- 測試所有 52 個指標欄、42 個檢視、11 個參數
 - 自訂 StatsInsightManager.pm 框架
 - 無需外部 Perl 相依性
 - 與 PostgreSQL 18 測試基礎設施相容

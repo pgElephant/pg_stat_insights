@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: pg_stat_insights 1.0\n"
+"Project-Id-Version: pg_stat_insights 3.0\n"
 "Report-Msgid-Bugs-To: team@pgelephant.org\n"
 "POT-Creation-Date: 2025-01-29 12:00+0000\n"
 "PO-Revision-Date: 2025-01-29 12:00+0000\n"
@@ -32,6 +32,10 @@ msgid "pg_stat_insights must be loaded via shared_preload_libraries"
 msgstr "pg_stat_insightsはshared_preload_libraries経由でロードする必要があります"
 
 #: pg_stat_insights.c
+msgid "pg_stat_insights must be loaded via \"shared_preload_libraries\""
+msgstr "pg_stat_insightsは\"shared_preload_libraries\"経由でロードする必要があります"
+
+#: pg_stat_insights.c
 msgid "Insufficient shared memory for pg_stat_insights"
 msgstr "pg_stat_insightsの共有メモリが不足しています"
 
@@ -55,3 +59,38 @@ msgstr "統計情報の収集が無効になっています"
 msgid "Extension initialization complete"
 msgstr "拡張機能の初期化が完了しました"
 
+#: pg_stat_insights.c
+msgid "pg_stat_insights: out of memory for query entry"
+msgstr "pg_stat_insights: クエリエントリのメモリが不足しています"
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights: normalized query buffer overflow, truncating"
+msgstr "pg_stat_insights: 正規化クエリバッファオーバーフロー、切り詰め中"
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights: normalized query buffer overflow at end"
+msgstr "pg_stat_insights: 正規化クエリバッファが終端でオーバーフロー"
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights: index size tracking not initialized"
+msgstr "pg_stat_insights: インデックスサイズ追跡が初期化されていません"
+
+#: pg_stat_insights.c
+msgid "pg_stat_insights: index lock tracking not initialized"
+msgstr "pg_stat_insights: インデックスロック追跡が初期化されていません"
+
+#: pg_stat_insights.c
+msgid "incorrect number of output arguments"
+msgstr "出力引数の数が正しくありません"
+
+#: pg_stat_insights.c
+msgid "return type must be a row type"
+msgstr "戻り値の型は行型である必要があります"
+
+#: pg_stat_insights.c
+msgid "out of memory"
+msgstr "メモリ不足"
+
+#: pg_stat_insights.c
+msgid "Could not allocate enough memory to read file \"%s\"."
+msgstr "ファイル\"%s\"を読み取るのに十分なメモリを割り当てできませんでした。"

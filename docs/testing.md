@@ -1,15 +1,16 @@
 # Testing Guide
 
-pg_stat_insights includes a comprehensive test suite with 22 regression tests covering all major PostgreSQL features.
+pg_stat_insights includes a comprehensive test suite with 31 regression tests covering all major PostgreSQL features, plus replication statistics validation tools.
 
 ## Test Suite Overview
 
 The test suite validates:
-- [OK] **22 test cases** covering all functionality
+- [OK] **31 regression test cases** covering all functionality
 - [OK] **PostgreSQL 16-18 compatibility**
 - [OK] **Deterministic results** with ORDER BY and fixed timestamps
 - [OK] **All 52 metrics** tracked and validated
-- [OK] **All 11 views** functionality verified
+- [OK] **All replication views** functionality verified
+- [OK] **Replication statistics accuracy** validated against native PostgreSQL views
 
 ## Running Tests
 
@@ -282,6 +283,163 @@ When contributing new tests:
 5. Document in this file
 
 For detailed contribution guidelines, see [Contributing Guide](contributing.md).
+
+## Replication Statistics Validation
+
+### Overview
+
+The replication statistics validation script (`tests/validate_replication_stats.py`) validates that pg_stat_insights replication monitoring views return accurate statistics by comparing them against native PostgreSQL views.
+
+### Features
+
+- **Physical Replication Validation**: Validates statistics for primary + read replica setup
+- **Logical Replication Validation**: Validates statistics for two-primary logical replication setup
+- **Accurate Statistics Comparison**: Compares pg_stat_insights views against native PostgreSQL views
+- **Comprehensive Reporting**: Generates JSON or HTML reports with detailed validation results
+
+### Prerequisites
+
+```bash
+# Install Python dependencies
+pip install -r tests/replication_testing/requirements_test.txt
+
+# Ensure PostgreSQL is installed and accessible
+# The script will create test clusters automatically
+```
+
+### Usage
+
+#### Validate Physical Replication Statistics (Primary + Read Replica)
+
+Creates a 2-node physical replication cluster and validates all pg_stat_insights physical replication views:
+
+```bash
+python tests/validate_replication_stats.py --scenario physical
+```
+
+#### Validate Logical Replication Statistics (Two Primaries)
+
+Creates a 2-primary logical replication setup and validates all pg_stat_insights logical replication views:
+
+```bash
+python tests/validate_replication_stats.py --scenario logical
+```
+
+#### Run All Scenarios
+
+```bash
+python tests/validate_replication_stats.py --scenario all
+```
+
+#### Validate Against Existing Cluster
+
+If you already have replication set up, validate against it without creating new clusters:
+
+```bash
+# Physical replication
+python tests/validate_replication_stats.py --validate-only \
+  --primary-conn "postgresql://localhost:5432/postgres" \
+  --replica-conn "postgresql://localhost:5433/postgres" \
+  --scenario physical
+
+# Logical replication
+python tests/validate_replication_stats.py --validate-only \
+  --primary1-conn "postgresql://localhost:5432/postgres" \
+  --primary2-conn "postgresql://localhost:5433/postgres" \
+  --scenario logical
+```
+
+#### Generate HTML Report
+
+```bash
+python tests/validate_replication_stats.py --scenario all \
+  --report-format html --output replication_validation_report.html
+```
+
+### Validated Views
+
+#### Physical Replication
+
+The script validates these pg_stat_insights views against native PostgreSQL views:
+
+- `pg_stat_insights_physical_replication` vs `pg_stat_replication`
+  - Lag calculations (bytes and seconds)
+  - Health status accuracy
+  - Replica state matching
+  
+- `pg_stat_insights_replication_wal` vs native WAL functions
+  - Current WAL LSN accuracy
+  - WAL file count
+  - Total WAL generated calculations
+
+- `pg_stat_insights_replication_slots` vs `pg_replication_slots`
+  - Slot lag calculations
+  - Health status accuracy
+
+- `pg_stat_insights_replication_summary` vs aggregated native views
+  - Replica counts
+  - Maximum lag calculations
+
+- `pg_stat_insights_replication_alerts` - Alert level accuracy
+- `pg_stat_insights_replication_bottlenecks` - Bottleneck detection accuracy
+
+#### Logical Replication
+
+The script validates these pg_stat_insights views:
+
+- `pg_stat_insights_subscriptions` vs `pg_subscription`
+- `pg_stat_insights_subscription_stats` vs `pg_subscription_rel`
+- `pg_stat_insights_publications` vs `pg_publication`/`pg_publication_tables`
+- `pg_stat_insights_logical_replication` vs `pg_replication_slots`
+- `pg_stat_insights_replication_conflicts` - Conflict detection accuracy
+- `pg_stat_insights_replication_origins` - Origin tracking accuracy
+
+### Validation Details
+
+Each validation compares:
+- **Lag Calculations**: Validates that lag_bytes and lag_seconds match manual WAL LSN differences
+- **Count Aggregates**: Verifies counts match native view counts
+- **Status Values**: Ensures health/status values accurately reflect actual conditions
+- **Data Type Accuracy**: Validates calculated fields (lag_mb, etc.) use correct conversions
+
+### Example Output
+
+```
+============================================================
+Validating Physical Replication Statistics
+============================================================
+
+Generating WAL activity on primary...
+Waiting for replication to process WAL...
+
+Validating pg_stat_insights_physical_replication...
+Validating pg_stat_insights_replication_wal...
+Validating pg_stat_insights_replication_slots...
+Validating pg_stat_insights_replication_summary...
+
+------------------------------------------------------------
+Physical Replication Validation Summary:
+  Total checks: 15
+  Passed: 15
+  Failed: 0
+  Success rate: 100.0%
+
+✅ All validations passed!
+```
+
+### Troubleshooting
+
+**Error: "PostgreSQL binary not found"**
+- Set `PG_BASE` environment variable or ensure PostgreSQL binaries are in PATH
+- Example: `export PG_BASE=/usr/local/pgsql`
+
+**Error: "Cannot create extension"**
+- Ensure extension is installed: `make install`
+- Verify `shared_preload_libraries` includes 'pg_stat_insights'
+
+**Error: "Port already in use"**
+- The script uses ports 5435-5438 by default
+- Ensure these ports are available or modify the port numbers in the script
 
 ## Resources
 

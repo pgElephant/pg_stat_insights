@@ -10,17 +10,19 @@
 
 <div align="center">
 
-**跟踪 52 个指标，11 个视图 - 实时监控 PostgreSQL 查询性能**
+**跟踪 52 个指标，42 个视图 - 实时监控 PostgreSQL 查询性能、复制和索引**
 
 *适用于 PostgreSQL 16、17、18 的生产就绪扩展 - pg_stat_statements 的增强型替代品*
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20|%2017%20|%2018-blue.svg)](https://www.postgresql.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/pgelephant/pg_stat_insights/blob/main/LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-31%2F31%20passing-brightgreen.svg)]()
 [![Metrics](https://img.shields.io/badge/metrics-52_columns-brightgreen.svg)]()
 [![Documentation](https://img.shields.io/badge/docs-github.io-blue.svg)](https://pgelephant.github.io/pg_stat_insights/)
+[![Version](https://img.shields.io/badge/version-3.0-blue.svg)]()
 
-![52 列指标，11 个视图](https://img.shields.io/badge/52_列-11_视图-success?style=for-the-badge)
+![52 列指标，42 个视图](https://img.shields.io/badge/52_列-42_视图-success?style=for-the-badge)
 
 </div>
 
@@ -30,25 +32,29 @@
 
 **简化 PostgreSQL 查询性能监控**
 
-`pg_stat_insights` 是一个先进的 PostgreSQL 扩展，用于**数据库性能监控**、**查询优化**和 **SQL 分析**。跟踪和分析 **52 个综合指标**，通过 **11 个预构建视图**识别慢查询、优化缓存性能并实时监控数据库健康状况。
+`pg_stat_insights` 是一个先进的 PostgreSQL 扩展，用于**数据库性能监控**、**查询优化**、**复制健康**和**索引分析**。跟踪和分析 **52 个综合指标**，通过 **42 个预构建视图**识别慢查询、优化缓存性能、监控复制健康（物理和逻辑）、检测瓶颈、分析索引使用、识别缺失索引、跟踪索引膨胀，并实时调试数据库问题，包括时间序列桶分析。
 
 **适用于：**
 - 监控 PostgreSQL 性能的数据库管理员
 - 跟踪查询性能和资源使用的 DevOps 团队
 - 优化 SQL 查询和数据库操作的开发人员
 - 实施数据库监控和告警的 SRE
+- 分析索引效率和膨胀的性能工程师
 
 **主要特性：**
 - **52 个指标列** - 执行时间、缓存命中、WAL 生成、JIT 统计、缓冲区 I/O
-- **11 个预构建视图** - 即时访问最慢查询、缓存未命中、I/O 密集型操作
+- **42 个预构建视图** - 即时访问最慢查询、缓存未命中、I/O 密集型操作、全面的复制监控（物理和逻辑）和瓶颈检测、订阅跟踪、发布管理、健康诊断、完整的索引监控和时间序列桶分析
 - **11 个参数** - 微调跟踪、直方图和统计收集
 - **直接替换** pg_stat_statements，具有增强的指标
-- **PostgreSQL 16-18** - 与最新 PostgreSQL 版本完全兼容
-- **响应时间跟踪** - 按执行时间对查询进行分类（<1ms 到 >10s）
+- **PostgreSQL 16-18** - 与 PostgreSQL 16、17 和 18 完全兼容
+- **响应时间跟踪** - 按执行时间对查询进行分类（小于 1ms 到大于 10s）
+- **复制监控** - 17 个专门视图用于物理和逻辑复制健康、延迟跟踪和诊断
+- **索引监控** - 11 个综合视图用于索引使用、膨胀、效率、维护、缺失索引和告警
 - **缓存分析** - 识别缓冲区缓存低效率和优化机会
 - **WAL 监控** - 跟踪每个查询的预写日志生成
-- **时间序列数据** - 历史性能趋势和桶分析
+- **时间序列数据** - 查询、索引和复制的历史性能趋势和桶分析
 - **Prometheus/Grafana 就绪** - 包含预构建的仪表板和告警规则
+- **31 个回归测试** - 所有功能的全面测试覆盖
 
 ---
 
@@ -89,7 +95,7 @@ LIMIT 10;
 
 - [入门指南](https://pgelephant.github.io/pg_stat_insights/getting-started/) - 安装和设置
 - [配置](https://pgelephant.github.io/pg_stat_insights/configuration/) - 所有 11 个参数
-- [视图参考](https://pgelephant.github.io/pg_stat_insights/views/) - 所有 11 个视图
+- [视图参考](https://pgelephant.github.io/pg_stat_insights/views/) - 所有 42 个视图
 - [指标指南](https://pgelephant.github.io/pg_stat_insights/metrics/) - 所有 52 列
 - [使用示例](https://pgelephant.github.io/pg_stat_insights/usage/) - 50+ SQL 查询
 - [Prometheus & Grafana](https://pgelephant.github.io/pg_stat_insights/prometheus-grafana/) - 监控集成
@@ -122,7 +128,9 @@ psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
 
 ## 视图
 
-所有 11 个预构建视图：
+所有 42 个预构建视图按类别组织：
+
+### 查询性能视图（10 个视图）
 
 | 视图 | 用途 |
 |------|---------|
@@ -136,7 +144,23 @@ psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
 | `pg_stat_insights_plan_errors` | 计划估算问题 |
 | `pg_stat_insights_histogram_summary` | 响应时间分布 |
 | `pg_stat_insights_by_bucket` | 时间序列聚合 |
-| `pg_stat_insights_replication` | 复制监控 |
+
+### 复制监控视图（17 个视图）
+
+包括物理复制、逻辑复制、订阅、发布、复制源和综合仪表板视图。
+
+### 索引监控视图（11 个视图）
+
+包括索引使用、膨胀检测、效率指标、维护建议、缺失索引、告警和大小趋势视图。
+
+### 时间序列桶视图（4 个新视图）
+
+| 视图 | 用途 |
+|------|---------|
+| `pg_stat_insights_index_by_bucket` | 按小时桶的索引使用统计 |
+| `pg_stat_insights_index_size_by_bucket` | 按天桶的索引大小趋势 |
+| `pg_stat_insights_replication_by_bucket` | 按小时桶的复制统计 |
+| `pg_stat_insights_replication_lag_by_bucket` | 按小时桶的复制延迟趋势 |
 
 **完整参考：** [视图文档](https://pgelephant.github.io/pg_stat_insights/views/)
 
@@ -150,6 +174,10 @@ psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
 - **优化缓存使用** - 检测缓冲区缓存未命中并提高 shared_buffers 效率
 - **减少 WAL 开销** - 监控每种查询类型的预写日志生成
 - **跟踪查询模式** - 分析执行频率、响应时间和资源消耗
+- **监控复制** - 全面的物理和逻辑复制监控，带瓶颈检测
+- **排查延迟** - 识别网络、I/O 或重放瓶颈，提供可操作的建议
+- **优化索引** - 识别未使用的索引、检测膨胀、查找缺失索引并跟踪索引效率
+- **监控索引健康** - 跟踪索引使用、大小趋势、锁争用和维护需求
 - **实时监控** - 与 Grafana 集成，实现实时仪表板和告警
 - **PostgreSQL 最佳实践** - 遵循 PostgreSQL 编码标准和约定构建
 
@@ -158,7 +186,7 @@ psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
 | 特性 | pg_stat_statements | pg_stat_monitor | **pg_stat_insights** |
 |---------|:------------------:|:---------------:|:--------------------:|
 | **指标列** | 44 | 58 | **52** |
-| **预构建视图** | 2 | 5 | **11** |
+| **预构建视图** | 2 | 5 | **42** |
 | **配置选项** | 5 | 12 | **11** |
 | **缓存分析** | 基础 | 基础 | **增强比率** |
 | **响应时间分类** | 否 | 否 | **是（<1ms 到 >10s）** |
@@ -176,7 +204,7 @@ psql -d your_database -c "CREATE EXTENSION pg_stat_insights;"
 **全面的 TAP 测试套件，确保质量：**
 - **16 个测试文件**涵盖所有扩展功能
 - **150 个测试用例**，100% 代码覆盖率
-- 测试所有 52 个指标列、11 个视图、11 个参数
+- 测试所有 52 个指标列、42 个视图、11 个参数
 - 自定义 StatsInsightManager.pm 框架
 - 无需外部 Perl 依赖
 - 与 PostgreSQL 18 测试基础设施兼容
