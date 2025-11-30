@@ -8,7 +8,7 @@ PostgreSQL extension for query performance monitoring.
 
 ## Overview
 
-pg_stat_insights tracks query performance in PostgreSQL. It records 52 metrics across 42 views. It monitors query execution, cache efficiency, WAL generation, replication health, and index usage.
+pg_stat_insights tracks query performance in PostgreSQL. It records 52 metrics across 42 views. It monitors query execution, cache efficiency, WAL generation, replication health, and detailed index analytics including bloat detection, missing index identification, size trends, and lock contention analysis.
 
 Works with PostgreSQL 16, 17, and 18.
 
@@ -46,6 +46,18 @@ SELECT
     rows
 FROM pg_stat_insights_top_by_time 
 LIMIT 10;
+
+-- Or view index bloat and maintenance needs
+SELECT 
+    schemaname,
+    tablename,
+    indexname,
+    bloat_severity,
+    estimated_bloat_size_mb,
+    needs_reindex
+FROM pg_stat_insights_index_bloat
+WHERE bloat_severity IN ('HIGH', 'MEDIUM')
+ORDER BY estimated_bloat_size_mb DESC;
 ```
 
 ## Documentation
@@ -211,31 +223,57 @@ Learn more: [Replication Monitoring Guide](https://pgelephant.github.io/pg_stat_
 
 ## Index Monitoring
 
-Index analytics and optimization:
+Comprehensive index analytics and optimization system with 11 specialized views and C code functions for deep index analysis.
 
-### Index Usage and Efficiency (4 views)
-- Usage tracking: monitor index scan frequency and utilization
-- Efficiency metrics: cache hit ratios, scan types, performance indicators
-- Size trends: historical index size growth tracking
-- Lock contention: identify indexes with high lock contention
+### Index Statistics and Usage Analysis
 
-### Index Health and Maintenance (4 views)
-- Bloat detection: identify bloated indexes with size estimation
-- Maintenance recommendations: REINDEX and VACUUM suggestions
-- Health summary: overall index statistics and status
-- Alerts: critical alerts for unused, bloated, or missing indexes
+The index statistics view provides complete index information including size in bytes and megabytes, page counts, scan counts, tuple read and fetch statistics, cache hit ratios for both index and heap access, index type classification, and metadata flags for unique, primary, partial, and expression indexes. The view calculates index-only scan ratios, selectivity ratios, distinct value ratios, column correlation values, and statistics freshness metrics.
 
-### Index Optimization (3 views)
-- Missing indexes: identify potential missing indexes based on sequential scans
-- Comprehensive dashboard: single view with all index metrics
-- Detailed statistics: complete index information with correlation and partial index usage
+The index usage view tracks scan frequency with scans per day calculations, categorizes usage status from never used to heavy usage, calculates index scan ratios against sequential scans, and provides recommendations for index retention or removal based on usage patterns and table activity levels.
 
-Features:
-- Bloat estimation: calculate estimated bloat size and percentage
-- Usage patterns: track index scans, index-only scans, sequential scans
-- Maintenance tracking: monitor last VACUUM and ANALYZE operations
-- Size monitoring: track index size growth over time
-- Lock analysis: identify indexes with high lock contention
+The index efficiency view calculates efficiency ratings from excellent to unused based on index versus sequential scan ratios, provides recommendations for index tuning or removal, and identifies cases where sequential scans are preferred over index scans.
+
+### Index Bloat Detection and Analysis
+
+The index bloat view estimates bloat by comparing actual index size against expected size based on tuple read patterns. It calculates estimated bloat ratios, wasted space in megabytes, bloat severity classification from none to high, and determines when REINDEX operations are needed. The view provides actual versus expected page counts and identifies indexes with significant wasted space.
+
+Bloat detection uses statistical analysis of index size relative to tuple access patterns. Indexes with bloat ratios above 2.0 are flagged as high severity, with medium severity for ratios above 1.5, and low severity for ratios above 1.2. The system calculates potential space savings from REINDEX operations.
+
+### Index Maintenance and Health Monitoring
+
+The index maintenance view generates actionable maintenance recommendations with priority levels. It identifies indexes needing REINDEX based on bloat severity, tables needing VACUUM based on update and delete activity, and tables needing ANALYZE based on statistics freshness. Each recommendation includes ready-to-execute SQL commands and estimated benefits.
+
+The index maintenance history view tracks VACUUM, ANALYZE, and statistics reset timestamps, calculates days since last maintenance operations, and provides maintenance status classifications including needs vacuum, needs analyze, stale vacuum, stale analyze, and current status.
+
+The index summary view provides cluster-wide statistics including total index count and size, active versus unused index counts, bloated index counts, indexes needing maintenance, average cache hit ratios, overall index usage ratios, index type distribution, and missing index counts.
+
+The index alerts view surfaces critical issues including high bloat alerts with severity levels and recommended actions, unused index warnings for indexes with zero scans, and inefficient index warnings for indexes with poor scan ratios relative to sequential scans.
+
+### Missing Index Detection
+
+The missing indexes view analyzes sequential scan patterns to identify tables that may benefit from additional indexes. It calculates benefit scores based on scan frequency and tuple read counts, provides estimated index size calculations, recommends index types, and flags high priority candidates when sequential scans significantly outnumber index scans.
+
+The system identifies tables with high sequential scan activity where index scans are absent or minimal. Benefit scores are calculated using scan frequency multiplied by tuple reads, providing a quantitative measure of potential improvement from adding indexes.
+
+### Index Size Trends and Lock Contention
+
+The index size trends view uses C code functions to capture historical index size snapshots stored in shared memory. It tracks size growth rates in megabytes per day, classifies growth trends as growing, shrinking, stable, or volatile, and provides projected size estimates for 30 and 90 day periods based on current growth rates.
+
+The index lock contention view tracks lock wait statistics for indexes experiencing contention. It records total wait counts, cumulative wait time in milliseconds, average wait time per lock, last wait timestamp, and contention severity classification from low to critical based on wait frequency.
+
+### Index Duplicate Detection
+
+The index duplicates view identifies redundant and overlapping indexes that can be consolidated. It detects exact duplicates with identical column sets, redundant indexes where one is a subset of another, indexes on the same first column, and potential overlaps. The view provides recommendations for which indexes to drop based on usage patterns and size.
+
+### Index Dashboard and Time-Series Analysis
+
+The index dashboard view consolidates all index metrics into a single JSON structure organized by section. It includes summary statistics, bloat details, unused index listings, and alert information. The JSON format is designed for direct integration with Grafana and Prometheus monitoring systems.
+
+The index by bucket view groups index usage statistics by hour, tracking scans, tuple reads, cache performance, and size changes within each time bucket. The index size by bucket view aggregates daily size snapshots with growth trends and trend classification, enabling identification of indexes with consistent growth patterns versus volatile size changes.
+
+### C Code Functions
+
+Three C functions provide low-level index monitoring capabilities. The index size snapshot function captures current index sizes and stores them in shared memory using a circular buffer that maintains up to one thousand snapshots. The index size trends function returns historical snapshots with growth rate calculations. The index lock contention function tracks lock wait events and accumulates wait time statistics in shared memory.
 
 Learn more: [Index Monitoring Guide](https://pgelephant.github.io/pg_stat_insights/views/)
 
@@ -280,7 +318,7 @@ Complete Prometheus/Grafana guide: [Monitoring Integration](https://pgelephant.g
 - Cache analysis: buffer cache efficiency metrics
 - WAL monitoring: write-ahead log generation tracking
 
-See: [Release Notes](RELEASE_NOTES_2.0.md) for detailed changelog
+See: [Release Notes](RELEASE_NOTES_3.0.md) for detailed changelog
 
 ## License
 
